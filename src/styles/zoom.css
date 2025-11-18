@@ -1,0 +1,5 @@
+.zoom-wrapper {
+  overflow: auto;          
+  touch-action: auto;      
+  -webkit-overflow-scrolling: touch; 
+}

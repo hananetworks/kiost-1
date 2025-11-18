@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MAXEE-KIOSK</title>
+
+    <!-- ✅ Google 번역 리소스 캐싱 & 사전연결 -->
+    <link rel="preconnect" href="https://translate.google.com">
+    <link rel="preconnect" href="https://translate.googleapis.com">
+    <link rel="dns-prefetch" href="https://translate.google.com">
+    <link rel="dns-prefetch" href="https://translate.googleapis.com">
+    <link rel="preload" as="script" href="https://translate.google.com/translate_a/element.js">
+
+    <style>
+      .goog-te-banner-frame.skiptranslate,
+      .goog-te-gadget-icon { display: none !important; }
+      body { top: 0 !important; }
+      .goog-logo-link, .goog-te-gadget span { display: none !important; }
+      #google_translate_element { display: none; }
+      .goog-te-gadget-simple, .VIpgJd-ZVi9od-ORHb-OEVmcd,
+      .goog-tooltip, .goog-tooltip:hover { display: none !important; }
+      .goog-text-highlight { background: none !important; box-shadow: none !important; }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+
+    <!-- 숨겨진 번역 위젯 컨테이너 -->
+    <div id="google_translate_element" aria-hidden="true"></div>
+
+    <!-- ✅ React 앱 엔트리 -->
+    <script type="module" src="./src/index.jsx"></script>
+
+    <!-- ✅ 1. 번역 쿠키 설정 -->
+    <script>
+      (function() {
+        const savedLang = localStorage.getItem("app_lang");
+        if (savedLang && savedLang !== "ko") {
+          const targetLang = savedLang.startsWith("zh") ? "zh-CN" : savedLang;
+          document.cookie = `googtrans=/ko/${targetLang}; path=/`;
+          document.cookie = `googtrans=/ko/${targetLang}; path=/; domain=${window.location.hostname}`;
+          console.log(`✅ 초기 구글 번역 쿠키 설정: /ko/${targetLang}`);
+        }
+      })();
+    </script>
+
+    <!-- ✅ 2. 구글 번역 초기화 함수 -->
+    <script>
+      window.activeLang = localStorage.getItem("app_lang") || "ko";
+
+      function googleTranslateElementInit() {
+        if (window.googleTranslateInitCalled) return;
+        window.googleTranslateInitCalled = true;
+
+        new google.translate.TranslateElement(
+          {
+            pageLanguage: "ko",
+            includedLanguages: "ko,en,es,zh-CN,zh-TW,ja",
+            layout: google.translate.TranslateElement.InlineLayout.SIMPLE,
+            autoDisplay: false,
+          },
+          "google_translate_element"
+        );
+
+        console.log("✅ Google Translate initialized");
+        window.dispatchEvent(new Event("google-translate-load"));
+
+        // ✅ React 텍스트(자막 포함) 자동 재번역 감시
+        const observer = new MutationObserver(() => {
+          const lang = localStorage.getItem("app_lang") || "ko";
+          if (lang !== "ko" && window.google && google.translate) {
+            const select = document.querySelector(".goog-te-combo");
+            if (select && select.value !== lang) {
+              select.value = lang;
+              select.dispatchEvent(new Event("change"));
+              console.log(`🌐 번역 다시 적용됨: ${lang}`);
+            }
+          }
+        });
+        observer.observe(document.getElementById("root"), {
+          childList: true,
+          subtree: true,
+        });
+      }
+    </script>
+
+    <!-- ✅ 3. 구글 번역 스크립트 (캐싱 활성) -->
+    <script
+  defer
+  src="https://translate.googleapis.com/translate_a/element.js?cb=googleTranslateElementInit"
+></script>
+  </body>
+</html>
