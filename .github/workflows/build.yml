@@ -1,23 +1,17 @@
-name: Kiosk Build & Release
+name: Kiosk Release
 
 on:
-  # 1. 메인 브랜치에 푸시하거나 태그 달면 실행
   push:
     branches: [ "main" ]
-    tags: [ "v*" ]
-  # 2. 수동 실행 버튼 추가
-  workflow_dispatch:
+    tags: [ "v*" ] # v1.0.0 태그 달면 배포
+  workflow_dispatch: # 수동 실행 버튼
 
 jobs:
   build:
     runs-on: windows-latest
+
     permissions:
       contents: write
-
-    # [핵심!] "모든 작업은 new_py_kiosk 폴더 안에서 수행해라" 라는 설정
-    defaults:
-      run:
-        working-directory: ./new_py_kiosk
 
     steps:
       - name: Check out Code
@@ -28,8 +22,6 @@ jobs:
         with:
           node-version: 18
           cache: 'npm'
-          # [중요] 캐시 파일 위치도 폴더 안쪽이라고 알려줘야 에러가 안 남
-          cache-dependency-path: new_py_kiosk/package-lock.json
 
       - name: Create Secrets
         shell: bash
@@ -37,8 +29,6 @@ jobs:
           ENV_FILE: ${{ secrets.ENV_FILE }}
           GCLOUD_KEY: ${{ secrets.GCLOUD_KEY }}
         run: |
-          # 이미 working-directory 설정 때문에 new_py_kiosk 안에 들어와 있는 상태입니다.
-          # 따라서 그냥 생성하면 올바른 위치에 만들어집니다.
           echo "$ENV_FILE" > .env
           echo "$GCLOUD_KEY" > gcloud-key.json
 
@@ -51,16 +41,16 @@ jobs:
       - name: Install Python Dependencies
         run: |
           python -m pip install --upgrade pip
-          # requirements.txt도 폴더 안에 있으니 잘 찾을 겁니다.
           pip install -r requirements.txt --target python-env
 
       - name: Install NPM Dependencies
         run: npm install
 
-      - name: Build React
+      - name: Build React App
         run: npm run build:react
 
-      # 태그(v*)가 있으면 배포, 없으면 빌드만
+      # [배포 단계]
+      # v1.0.0 처럼 태그가 있을 때만 실제로 GitHub Releases에 업로드함
       - name: Build & Publish Electron
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
