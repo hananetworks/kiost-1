@@ -45,5 +45,5 @@ jobs:
       # 파이썬 환경 없이 가벼운 Setup.exe만 생성하여 배포
       - name: Build & Publish Electron
         env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npm run dist -- --publish always

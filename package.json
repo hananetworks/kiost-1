@@ -5,7 +5,7 @@
   "main": "electron/src/main.js",
   "repository": {
     "type": "git",
-    "url": "https://github.com/hananetworks/kiosk-1.git"
+    "url": "https://github.com/hananetworks/kiost-1.git"
   },
   "scripts": {
     "dev:react": "vite --config vite.config.js",
@@ -25,7 +25,7 @@
       {
         "provider": "github",
         "owner": "hananetworks",
-        "repo": "kiosk-1"
+        "repo": "kiost-1"
       }
     ],
     "directories": {
