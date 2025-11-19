@@ -29,7 +29,7 @@
       }
     ],
     "directories": {
-      "buildResources": "build",
+      "buildResources": "resources",
       "output": "release"
     },
     "asar": false,
@@ -61,7 +61,6 @@
         "from": "gcloud-key.json",
         "to": "resources/gcloud-key.json"
       },
-
       {
         "from": "electron/workers",
         "to": "resources/main",
@@ -74,16 +73,16 @@
       "target": [
         "nsis"
       ],
-      "icon": "build/icon.ico",
+      "icon": "resources/icon.ico",
       "artifactName": "${productName} Setup ${version}.${ext}"
     },
     "nsis": {
       "oneClick": true,
       "perMachine": false,
       "allowToChangeInstallationDirectory": false,
-      "installerIcon": "build/icon.ico",
-      "uninstallerIcon": "build/icon.ico",
-      "installerHeaderIcon": "build/icon.ico",
+      "installerIcon": "resources/icon.ico",
+      "uninstallerIcon": "resources/icon.ico",
+      "installerHeaderIcon": "resources/icon.ico",
       "runAfterFinish": true,
       "shortcutName": "MAXEE Promotional"
     }
