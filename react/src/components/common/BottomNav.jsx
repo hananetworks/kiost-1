@@ -7,10 +7,10 @@ import HighContrastIcon from "../../assets/icons/high_contrast.svg?react";
 import ZoomInIcon from "../../assets/icons/zoom_in.svg?react";
 import CaptionIcon from "../../assets/icons/caption.svg?react";
 import VoiceIcon from "../../assets/icons/voice.svg?react";
-import VoiceModal from "../../components/common/VoiceModal";
-import CallModal from "../../components/common/CallModal";
+import VoiceModal from "./VoiceModal";
+import CallModal from "./CallModal";
 import MicIcon from "../../assets/icons/mic.svg?react";
-import LanguageModal from "../../components/common/LanguageModal";
+import LanguageModal from "./LanguageModal";
 // Globe 아이콘은 새 코드에서 사용 안 함
 // import Globe from "../../assets/icons/globe.svg?react";
 import { changeLanguage } from "../../utils/changeLanguage";

@@ -41,4 +41,4 @@ console.log('Node Version:', process.versions.node);
 appendLog('🚀 Electron 부트스트랩 시작됨');
 
 // ✅ main.js 실행
-require('./main/main.js');
+require('./electron/src/main.js');

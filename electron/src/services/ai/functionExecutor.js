@@ -1,7 +1,7 @@
 // functionExecutor.js (plan_tourist_route 도구 정의 수정)
 
-const { plan_tourist_route } = require('./routeService.js');
-const { search_web_for_info } = require('./searchService.js');
+const { plan_tourist_route } = require('../kiosk/routeService.js');
+const { search_web_for_info } = require('../kiosk/searchService.js');
 
 const availableFunctions = {
     plan_tourist_route,

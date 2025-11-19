@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import BottomNav from "../common/BottomNav";
 import Subtitle from "../common/Subtitle";
-import HeaderLogo from "../../components/layout/HeaderLogo";
+import HeaderLogo from "./HeaderLogo";
 import AvatarPlayer from "../avatar/AvatarPlayer";
 
 export default function KioskLayout({

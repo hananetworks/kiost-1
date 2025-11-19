@@ -1,6 +1,6 @@
 // openAIService.js
 const OpenAI = require('openai');
-const { cheonanSights } = require('../config/knowledgeBase.js');
+const { cheonanSights } = require('../kiosk/knowledgeBase.js');
 const { availableTools, executeFunction } = require('./functionExecutor.js');
 
 let client = null;

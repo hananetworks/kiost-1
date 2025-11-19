@@ -2,20 +2,17 @@
   "name": "maxee-ticketing",
   "version": "1.0.3",
   "description": "hana US kiosk-first > object: ticket",
-  "main": "bootstrap.js",
-
+  "main": "electron/src/main.js",
   "repository": {
     "type": "git",
     "url": "https://github.com/hananetworks/kiosk-1.git"
   },
-
   "scripts": {
     "dev:react": "vite --config vite.config.js",
     "build:react": "vite build --config vite.config.js",
     "electron": "cross-env NODE_ENV=development electron .",
     "start": "concurrently \"npm run dev:react\" \"npm run electron\"",
     "prebuild": "npm run build:react",
-
     "dist": "npm run build:react && electron-builder -p always",
     "postinstall": "electron-builder install-app-deps"
   },
@@ -24,8 +21,6 @@
   "build": {
     "appId": "com.hananetworks.maxee-promotional",
     "productName": "MAXEE_promotional",
-
-
     "publish": [
       {
         "provider": "github",
@@ -33,7 +28,6 @@
         "repo": "kiosk-1"
       }
     ],
-
     "directories": {
       "buildResources": "build",
       "output": "release"
@@ -42,26 +36,40 @@
     "compression": "store",
     "files": [
       "dist/**/*",
-      "main/**/*",
-      "preload/**/*",
-      "config/**/*",
-      "bootstrap.js",
-      "package.json",
-      "!python-env/**/*",
-      "!melo-en-model/**/*",
-      "!mecab_ko_dic/**/*"
+      "electron/src/**/*",
+      "package.json"
     ],
     "extraResources": [
-      { "from": "dll/", "to": "dll/", "filter": [ "**/*" ] },
-      { "from": "ffmpeg.dll", "to": "ffmpeg.dll" }
+      {
+        "from": "dll/",
+        "to": "dll/",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "ffmpeg.dll",
+        "to": "ffmpeg.dll"
+      }
     ],
     "extraFiles": [
-      { "from": ".env", "to": "resources/.env" },
-      { "from": "gcloud-key.json", "to": "resources/gcloud-key.json" },
-      { "from": "python-env/", "to": "resources/python-env" },
-      { "from": "main", "to": "resources/main", "filter": [ "**/*.py" ] }
-    ],
+      {
+        "from": ".env",
+        "to": "resources/.env"
+      },
+      {
+        "from": "gcloud-key.json",
+        "to": "resources/gcloud-key.json"
+      },
 
+      {
+        "from": "electron/workers",
+        "to": "resources/main",
+        "filter": [
+          "**/*.py"
+        ]
+      }
+    ],
     "win": {
       "target": [
         "nsis"
@@ -98,11 +106,13 @@
   },
   "dependencies": {
     "@google-cloud/speech": "^7.2.1",
+    "adm-zip": "^0.5.16",
     "auto-launch": "^5.0.6",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "electron-edge-js": "29.0.0",
     "electron-localshortcut": "^3.2.1",
+    "electron-log": "^5.4.3",
     "electron-updater": "^6.6.2",
     "express": "^5.1.0",
     "form-data": "^4.0.4",
@@ -116,6 +126,7 @@
     "react-dom": "^19.1.1",
     "react-router-dom": "^7.8.2",
     "serialport": "^13.0.0",
+    "systeminformation": "^5.27.11",
     "uuid": "^13.0.0",
     "webdav": "^4.11.0",
     "webdav-server": "^2.6.2",

@@ -79,4 +79,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
         return () => ipcRenderer.removeListener('tts:playback-finished', listener);
     },
     // --- TTS 끝 ---
+
+    // 🔽 [신규] '지능형 업데이트'를 위한 유휴 상태 전송 함수 🔽
+    sendInactivityStatus: (status) => {
+        ipcRenderer.send('app:inactivity-status', status);
+    }
 });

@@ -8,18 +8,22 @@ export default defineConfig({
     react(),
     svgr(), 
   ],
-  root: ".", 
-  base: "./",
-  server: {
-    port: 4000,
-    strictPort: true,
-  },
-  build: {
-    outDir: "dist",
-  },
-  resolve: {
-    alias: {
-      "@": path.resolve(__dirname, "./src"),
+    root: "react",
+
+    base: "./",
+    server: {
+        port: 4000,
+        strictPort: true,
     },
-  },
+
+    build: {
+        outDir: "../dist",
+        emptyOutDir: true,
+    },
+
+    resolve: {
+        alias: {
+            "@": path.resolve(__dirname, "./react/src"),
+        },
+    },
 });

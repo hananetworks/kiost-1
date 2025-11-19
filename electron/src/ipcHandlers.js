@@ -1,19 +1,20 @@
 // ipcHandlers.js
 
-const sttPipeClient = require('./services/sttPipeClient');
+const sttPipeClient = require('./services/voice/sttPipeClient');
 const fetch = require('node-fetch');
 const { Headers } = require('node-fetch');
 const FormData = require('form-data');
+const { setInactivityStatus } = require('./updater');
 global.fetch = fetch;
 global.Headers = Headers;
 global.FormData = FormData;
 
 const { ipcMain } = require('electron');
-const { getOpenAIResponse, correctTextWithGPT, handleUserSttInput } = require('./services/openAIService.js');
-const { printContent } = require('./services/printService.js');
+const { getOpenAIResponse, correctTextWithGPT, handleUserSttInput } = require('./services/ai/openAIService.js');
+const { printContent } = require('./services/hardware/printService.js');
 
-const ttsPipeClient = require('./services/ttsPipeClient'); // 한국어 TTS 클라이언트
-const ttsPipeClientEN = require('./services/ttsPipeClientEN'); // 영어 TTS 클라이언트
+const ttsPipeClient = require('./services/voice/ttsPipeClient'); // 한국어 TTS 클라이언트
+const ttsPipeClientEN = require('./services/voice/ttsPipeClientEN'); // 영어 TTS 클라이언트
 
 function registerIpcHandlers(win) {
 
@@ -91,6 +92,11 @@ function registerIpcHandlers(win) {
         sttPipeClient.send(JSON.stringify({ "command": "stop" }));
     });
 
+    //지능형 업데이트를 위한 유휴 상태 리스너
+    ipcMain.on('app:inactivity-status', (event, status) => {
+        // React가 보낸 유휴 상태(true/false)를 Updater 모듈로 전달
+        setInactivityStatus(status);
+    });
 
     // --- TTS 제어 ---
     ipcMain.on('tts:command', (event, args) => {

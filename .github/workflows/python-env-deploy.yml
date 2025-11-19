@@ -1,0 +1,66 @@
+name: Deploy Python Environment
+
+on:
+  push:
+    tags:
+      - 'env-v*' # 예: env-v1.0.0 태그가 달릴 때 실행
+
+jobs:
+  build-python-env:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Build Embeddable Python
+        shell: powershell
+        run: |
+          # 1. Embeddable Python 3.11.9 다운로드
+          Write-Host "Downloading Python 3.11.9 Embeddable..."
+          Invoke-WebRequest -Uri "https://www.python.org/ftp/python/3.11.9/python-3.11.9-embed-amd64.zip" -OutFile "python.zip"
+          
+          # 2. 압축 해제
+          Expand-Archive -Path "python.zip" -DestinationPath "python-env"
+          
+          # 3. pip 사용을 위해 python311._pth 파일 수정 (주석 해제)
+          $pth = "python-env/python311._pth"
+          if (Test-Path $pth) {
+              (Get-Content $pth) | ForEach-Object { $_ -replace "#import site", "import site" } | Set-Content $pth
+          }
+          
+          # 4. get-pip.py 다운로드 및 pip 설치
+          Write-Host "Installing pip..."
+          Invoke-WebRequest -Uri "https://bootstrap.pypa.io/get-pip.py" -OutFile "get-pip.py"
+          .\python-env\python.exe get-pip.py
+          
+          # 5. 라이브러리 설치 (requirements.txt 기반)
+          Write-Host "Installing libraries..."
+          
+          # 빌드 도구 업데이트
+          .\python-env\python.exe -m pip install --upgrade pip wheel setuptools
+          
+          # [중요] PyTorch CPU 버전과 Git 의존성을 위해 옵션 추가!
+          # --extra-index-url: PyTorch CPU 버전을 찾기 위한 주소
+          # --no-warn-script-location: 경고 메시지 무시
+          .\python-env\python.exe -m pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu --no-warn-script-location
+          
+          # 6. 불필요한 파일 정리 (용량 최적화)
+          Remove-Item "python.zip"
+          Remove-Item "get-pip.py"
+          # 캐시 폴더 제거
+          Get-ChildItem -Path "python-env" -Recurse -Filter "__pycache__" | Remove-Item -Recurse -Force
+
+      # python-env 폴더를 통째로 압축
+      - name: Zip python-env folder
+        run: 7z a python-env.zip python-env
+
+      # GitHub Releases에 업로드
+      - name: Upload to Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: python-env.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

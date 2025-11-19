@@ -3,7 +3,7 @@
  * 외부 입력 장치(리모컨, 링크프리 등)의 입력을 감지하고 처리하는 파일입니다.
  */
 
-import { goToMainScreen, goBack } from '@/utils/kioskActions';
+import { goToMainScreen, goBack } from './kioskActions';
 
 let navigateFunction = null;
 
