@@ -1,6 +1,6 @@
 {
   "name": "maxee-ticketing",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "description": "hana US kiosk-first > object: ticket",
   "main": "electron/src/main.js",
   "repository": {
@@ -19,6 +19,7 @@
   "author": "minho J. and hanna J. and geonwoo L.",
   "license": "MIT",
   "build": {
+    "forcePublish": true,
     "appId": "com.hananetworks.maxee-promotional",
     "productName": "MAXEE_promotional",
     "publish": [
