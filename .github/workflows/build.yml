@@ -3,7 +3,7 @@ name: Release Electron App
 on:
   push:
     tags:
-      - 'v*' # v1.0.10 등 태그가 달릴 때만 실행
+      - 'v*' # v1.0.12 등 태그가 달릴 때만 실행
 
 jobs:
   build-app:
@@ -16,7 +16,7 @@ jobs:
       - name: Check out Code
         uses: actions/checkout@v3
         with:
-          fetch-depth: 0 # 태그 정보 가져오기 필수
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v3
@@ -24,25 +24,29 @@ jobs:
           node-version: 20
           cache: 'npm'
 
+      # [수정] GH_TOKEN을 환경변수로 가져와서 .env 파일에 추가합니다!
       - name: Create Secrets
         shell: bash
         env:
           ENV_FILE: ${{ secrets.ENV_FILE }}
           GCLOUD_KEY: ${{ secrets.GCLOUD_KEY }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN }} # 1. 토큰 가져오기
         run: |
           echo "$ENV_FILE" > .env
           echo "$GCLOUD_KEY" > gcloud-key.json
+          
+          # 2. .env 파일 끝에 토큰 추가 (앱이 실행될 때 읽을 수 있게)
+          echo "" >> .env
+          echo "GH_TOKEN=$GH_TOKEN" >> .env
 
       - name: Install Dependencies
         run: npm install
 
-      # [중요] React를 먼저 빌드해서 'dist' 폴더를 만들어야 합니다!
       - name: Build React App
         run: npm run build:react
 
-      # [배포 단계] dist 폴더가 생긴 후에 빌더를 실행합니다.
+      # [수정] 배포할 때도 GH_TOKEN 사용 (권한 문제 해결)
       - name: Build & Publish Electron
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN}}
-        # npm run dist 대신, npx로 직접 실행해서 꼬임을 방지합니다.
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: npx electron-builder --publish always
