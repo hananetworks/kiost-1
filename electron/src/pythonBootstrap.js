@@ -7,7 +7,7 @@ const { log } = require('./logging');
 const dotenv = require('dotenv'); // dotenv 모듈 필요
 
 // [설정]
-const REQUIRED_ENV_VERSION = 'env-v1.0.0';
+const REQUIRED_ENV_VERSION = 'env-v1.0.1';
 const REPO_OWNER = 'hananetworks';
 const REPO_NAME = 'kiost-1';
 
