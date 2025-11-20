@@ -43,7 +43,7 @@ jobs:
           python -m pip install --upgrade pip setuptools wheel
           
           # 3-2. 실제 설치 (PyTorch CPU 버전 지정)
-          python -m pip install -r requirements.txt --target python-env --extra-index-url https://download.pytorch.org/whl/cpu --no-warn-script-location
+          python -m pip install -r requirements.txt --target python-env/Lib/site-packages --extra-index-url https://download.pytorch.org/whl/cpu --no-warn-script-location
           
           # ----------------------------------------------------------------
           # [수정됨] 4. DLL 구조 작전 (에러 수정)
