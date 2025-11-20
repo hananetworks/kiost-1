@@ -3,7 +3,7 @@ name: Deploy Python Environment
 on:
   push:
     tags:
-      - 'env-v*' # 예: env-v1.0.1 태그 시 실행
+      - 'env-v*' # 예: env-v1.0.2 태그 시 실행
 
 jobs:
   build-python-env:
@@ -32,7 +32,9 @@ jobs:
           
           # 2. _pth 파일 수정 (라이브러리 인식 활성화)
           $pth = "python-env/python311._pth"
-          (Get-Content $pth) | ForEach-Object { $_ -replace "#import site", "import site" } | Set-Content $pth
+          if (Test-Path $pth) {
+              (Get-Content $pth) | ForEach-Object { $_ -replace "#import site", "import site" } | Set-Content $pth
+          }
           
           # 3. 라이브러리 설치 (System Python 사용 -> Target은 python-env 폴더)
           Write-Host "Installing libraries using System Python..."
@@ -40,23 +42,19 @@ jobs:
           # 3-1. 빌드 도구 업그레이드
           python -m pip install --upgrade pip setuptools wheel
           
-          # 3-2. 실제 설치
-          # --target: 이동식 파이썬 폴더에 설치
-          # --extra-index-url: PyTorch CPU 버전
-          # --no-warn-script-location: 경로 경고 무시
+          # 3-2. 실제 설치 (PyTorch CPU 버전 지정)
           python -m pip install -r requirements.txt --target python-env --extra-index-url https://download.pytorch.org/whl/cpu --no-warn-script-location
           
           # ----------------------------------------------------------------
-          # [추가됨] 4. DLL 파일 긴급 구조 작전 (MeCab 에러 해결의 핵심!)
-          # site-packages 깊숙이 박혀있는 .dll 파일들을 python.exe 옆으로 꺼내옵니다.
-          # 이렇게 해야 Embeddable Python이 DLL을 찾을 수 있습니다.
+          # [수정됨] 4. DLL 구조 작전 (에러 수정)
+          # 전체 폴더가 아니라 'Lib/site-packages' 안에 있는 DLL만 꺼내옵니다.
+          # -ErrorAction SilentlyContinue: 중복 에러가 나도 무시하고 진행
           # ----------------------------------------------------------------
           Write-Host "Copying DLLs to root..."
-          Get-ChildItem -Path "python-env" -Recurse -Filter "*.dll" | Copy-Item -Destination "python-env" -Force
+          Get-ChildItem -Path "python-env/Lib/site-packages" -Recurse -Filter "*.dll" | Copy-Item -Destination "python-env" -Force -ErrorAction SilentlyContinue
           
-          # 5. 용량 최적화 (불필요한 파일 삭제)
+          # 5. 용량 최적화
           Remove-Item "python.zip"
-          # 캐시 폴더 제거
           Get-ChildItem -Path "python-env" -Recurse -Filter "__pycache__" | Remove-Item -Recurse -Force
 
       # python-env 폴더 압축
@@ -69,4 +67,4 @@ jobs:
         with:
           files: python-env.zip
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
