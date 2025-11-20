@@ -113,7 +113,7 @@
 // }; => 유후 상태에서 업데이트.
 
 const { autoUpdater } = require('electron-updater');
-const { log } = require('../logging'); // 로깅 모듈 사용
+const { log } = require('../logging/logger'); // 로깅 모듈 사용
 
 let win;
 

@@ -3,12 +3,12 @@ const fs = require('fs');
 const { app } = require('electron');
 const AdmZip = require('adm-zip');
 const fetch = require('node-fetch');
-const { log } = require('./logging');
+const { log } = require('./logging/logger');
 const dotenv = require('dotenv');
 
 // [설정] 파이썬 배포 태그와 일치해야 합니다!
 // 아까 env-v1.0.3으로 올리셨으면 여기도 1.0.3이어야 합니다.
-const REQUIRED_ENV_VERSION = 'env-v1.0.6';
+const REQUIRED_ENV_VERSION = 'env-v1.0.8';
 const REPO_OWNER = 'hananetworks';
 const REPO_NAME = 'kiost-1';
 

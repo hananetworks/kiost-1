@@ -5,9 +5,9 @@ const fs = require('fs');
 const express = require('express');
 
 // [신규] 모듈 로드
-const { log, initializeLogging, startResourceLogging } = require('./logging');
-const { initializeConfig } = require('./config');
-const { initializeUpdater } = require('./updater');
+const { log, initializeLogging, startResourceLogging } = require('./logging/logger');
+const { initializeConfig } = require('./config/setup');
+const { initializeUpdater } = require('./updater/updateManager');
 const { initializePythonServices, cleanupPythonServices } = require('./services/python');
 const { registerIpcHandlers } = require('./ipcHandlers'); // IPC 핸들러
 

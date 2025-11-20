@@ -3,7 +3,7 @@ name: Deploy Python Environment
 on:
   push:
     tags:
-      - 'env-v*' # 예: env-v1.0.2 태그 시 실행
+      - 'env-v*' # 예: env-v1.0.8 태그 시 실행
 
 jobs:
   build-python-env:
@@ -25,8 +25,17 @@ jobs:
       - name: Build Embeddable Python Directory
         shell: powershell
         run: |
+          # ========================================================
+          # [0. 필수 청소] 오염 방지를 위한 기존 폴더 초기화
+          # Git 저장소에 포함된 python-env(Anaconda 등)가 있다면 삭제합니다.
+          # ========================================================
+          if (Test-Path "python-env") {
+              Write-Host "⚠️ Cleaning up existing dirty python-env folder..."
+              Remove-Item -Path "python-env" -Recurse -Force
+          }
+
           # 1. 이동식 파이썬(Embeddable) 다운로드 & 압축 해제
-          Write-Host "Downloading Embeddable Python..."
+          Write-Host "Downloading Embeddable Python 3.11.9..."
           Invoke-WebRequest -Uri "https://www.python.org/ftp/python/3.11.9/python-3.11.9-embed-amd64.zip" -OutFile "python.zip"
           Expand-Archive -Path "python.zip" -DestinationPath "python-env"
           
@@ -42,19 +51,21 @@ jobs:
           # 3-1. 빌드 도구 업그레이드
           python -m pip install --upgrade pip setuptools wheel
           
-          # 3-2. 실제 설치 (PyTorch CPU 버전 지정)
+          # 3-2. 실제 설치 (PyTorch CPU 버전 지정, 타겟을 Lib/site-packages로 명시)
           python -m pip install -r requirements.txt --target python-env/Lib/site-packages --extra-index-url https://download.pytorch.org/whl/cpu --no-warn-script-location
           
           # ----------------------------------------------------------------
-          # [수정됨] 4. DLL 구조 작전 (에러 수정)
-          # 전체 폴더가 아니라 'Lib/site-packages' 안에 있는 DLL만 꺼내옵니다.
-          # -ErrorAction SilentlyContinue: 중복 에러가 나도 무시하고 진행
+          # 4. DLL 구조 작전 (에러 방지용 경로 체크 추가)
           # ----------------------------------------------------------------
           Write-Host "Copying DLLs to root..."
-          Get-ChildItem -Path "python-env/Lib/site-packages" -Recurse -Filter "*.dll" | Copy-Item -Destination "python-env" -Force -ErrorAction SilentlyContinue
+          if (Test-Path "python-env/Lib/site-packages") {
+              Get-ChildItem -Path "python-env/Lib/site-packages" -Recurse -Filter "*.dll" | Copy-Item -Destination "python-env" -Force -ErrorAction SilentlyContinue
+          } else {
+              Write-Host "Warning: Lib/site-packages not found. Skipping DLL copy."
+          }
           
           # 5. 용량 최적화
-          Remove-Item "python.zip"
+          if (Test-Path "python.zip") { Remove-Item "python.zip" }
           Get-ChildItem -Path "python-env" -Recurse -Filter "__pycache__" | Remove-Item -Recurse -Force
 
       # python-env 폴더 압축

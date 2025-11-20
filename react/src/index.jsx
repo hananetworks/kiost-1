@@ -5,7 +5,7 @@ import "./styles/contrast.css";
 import "./styles/zoom.css";
 import App from "./App";   
 
-// index.js
+// setup.js
 window.addEventListener("error", (event) => {
   if (
     event?.message?.includes("IDB") ||

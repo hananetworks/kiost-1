@@ -2,7 +2,7 @@ const { app, dialog } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const dotenv = require('dotenv');
-const { log } = require('../logging');
+const { log } = require('../logging/logger');
 
 // 'C:\ProgramData\[앱이름]' (모든 사용자 공용)
 // 이 경로는 포맷해도 살아남지 않지만, 앱 재설치나 사용자 변경에는 영향을 받지 않습니다.

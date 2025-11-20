@@ -1,7 +1,7 @@
 const { app, dialog } = require('electron');
 const path = require('path');
 const { PythonShell } = require('python-shell');
-const { log } = require('../../logging'); // 경로 확인 필요
+const { log } = require('../../logging/logger'); // 경로 확인 필요
 
 let ttsKrShell, ttsEnShell, sttShell;
 let ttsPipeClient, ttsPipeClientEN, sttPipeClient;
