@@ -4,10 +4,11 @@ const { app } = require('electron');
 const AdmZip = require('adm-zip');
 const fetch = require('node-fetch');
 const { log } = require('./logging');
-const dotenv = require('dotenv'); // dotenv 모듈 필요
+const dotenv = require('dotenv');
 
-// [설정]
-const REQUIRED_ENV_VERSION = 'env-v1.0.0';
+// [설정] 파이썬 배포 태그와 일치해야 합니다!
+// 아까 env-v1.0.3으로 올리셨으면 여기도 1.0.3이어야 합니다.
+const REQUIRED_ENV_VERSION = 'env-v1.0.3';
 const REPO_OWNER = 'hananetworks';
 const REPO_NAME = 'kiost-1';
 
@@ -16,12 +17,10 @@ const PYTHON_ENV_PATH = path.join(USER_DATA_PATH, 'python-env');
 const VERSION_FILE = path.join(PYTHON_ENV_PATH, 'version.txt');
 const PYTHON_EXE = path.join(PYTHON_ENV_PATH, 'python.exe');
 
-// [추가] .env 파일에서 토큰을 안전하게 로드하는 함수
+// [중요] .env 파일에서 토큰을 안전하게 로드하는 함수
 function loadEnvToken() {
-    // 1. 개발 환경 등에서 이미 로드된 경우
     if (process.env.GH_TOKEN) return process.env.GH_TOKEN;
 
-    // 2. 배포된 앱(resources 폴더) 내부의 .env 파일 찾기
     const envPath = app.isPackaged
         ? path.join(process.resourcesPath, '.env')
         : path.join(__dirname, '../../.env');
@@ -53,7 +52,6 @@ async function ensurePythonEnvironment(win) {
     log.info('[PythonBootstrap] 다운로드 시작 (Private Repo)...');
     if (win) win.webContents.send('python-download-start');
 
-    // 1. 토큰 가져오기
     const token = loadEnvToken();
     if (!token) {
         const err = "GH_TOKEN이 없습니다. .env 파일 주입 실패.";
@@ -61,12 +59,10 @@ async function ensurePythonEnvironment(win) {
         throw new Error(err);
     }
 
-    // 2. GitHub API로 릴리즈 정보 조회 (일반 링크는 404 뜸)
     const apiUrl = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases/tags/${REQUIRED_ENV_VERSION}`;
     const tempZipPath = path.join(USER_DATA_PATH, 'temp_python.zip');
 
     try {
-        // 2-1. 릴리즈 JSON 데이터 요청
         const releaseRes = await fetch(apiUrl, {
             headers: {
                 'Authorization': `Bearer ${token}`,
@@ -77,23 +73,19 @@ async function ensurePythonEnvironment(win) {
         if (!releaseRes.ok) throw new Error(`릴리즈 조회 실패: ${releaseRes.status}`);
 
         const releaseData = await releaseRes.json();
-
-        // 2-2. zip 파일 찾기
         const asset = releaseData.assets.find(a => a.name === 'python-env.zip');
         if (!asset) throw new Error("릴리즈에 'python-env.zip' 파일이 없습니다.");
 
-        // 3. 진짜 다운로드 (헤더 필수)
         const downloadRes = await fetch(asset.url, {
             headers: {
                 'Authorization': `Bearer ${token}`,
-                'Accept': 'application/octet-stream', // 이진 파일 요청 헤더
+                'Accept': 'application/octet-stream',
                 'User-Agent': 'Electron-Kiosk'
             }
         });
 
         if (!downloadRes.ok) throw new Error(`다운로드 실패: ${downloadRes.status}`);
 
-        // 4. 파일 저장
         const dest = fs.createWriteStream(tempZipPath);
         await new Promise((resolve, reject) => {
             downloadRes.body.pipe(dest);
