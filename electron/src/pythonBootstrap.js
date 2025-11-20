@@ -8,7 +8,7 @@ const { log } = require('./logging'); // 로깅 모듈 경로 확인
 // [설정] 배포할 파이썬 태그 (파이썬 업데이트 시 여기만 수정)
 const REQUIRED_ENV_VERSION = 'env-v1.0.0';
 const REPO_OWNER = 'hananetworks';
-const REPO_NAME = 'kiosk-1';
+const REPO_NAME = 'kiost-1';
 
 // AppData 폴더에 설치 (쓰기 권한 문제 해결)
 const USER_DATA_PATH = app.getPath('userData');
