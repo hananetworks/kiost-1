@@ -3,7 +3,7 @@ name: Deploy Python Environment
 on:
   push:
     tags:
-      - 'env-v*' # 예: env-v1.0.8 태그 시 실행
+      - 'env-v*'
 
 jobs:
   build-python-env:
@@ -15,69 +15,67 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      # [전략] GitHub Runner에 깔린 '완전판 파이썬'을 사용해 빌드 에러 회피
       - name: Setup System Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
           architecture: 'x64'
 
-      - name: Build Embeddable Python Directory
+      - name: Build Isolated Python Environment
         shell: powershell
         run: |
-          # ========================================================
-          # [0. 필수 청소] 오염 방지를 위한 기존 폴더 초기화
-          # Git 저장소에 포함된 python-env(Anaconda 등)가 있다면 삭제합니다.
-          # ========================================================
-          if (Test-Path "python-env") {
-              Write-Host "⚠️ Cleaning up existing dirty python-env folder..."
-              Remove-Item -Path "python-env" -Recurse -Force
-          }
+          # [전략 수정] 아예 새로운 이름의 폴더에서 작업 시작 (오염 원천 차단)
+          $CleanDir = "temp_build"
+          New-Item -ItemType Directory -Path $CleanDir -Force
+          Write-Host "Building in isolated directory: $CleanDir"
 
-          # 1. 이동식 파이썬(Embeddable) 다운로드 & 압축 해제
+          # 1. 이동식 파이썬(3.11.9 순정) 다운로드 -> temp_build에 압축 해제
           Write-Host "Downloading Embeddable Python 3.11.9..."
           Invoke-WebRequest -Uri "https://www.python.org/ftp/python/3.11.9/python-3.11.9-embed-amd64.zip" -OutFile "python.zip"
-          Expand-Archive -Path "python.zip" -DestinationPath "python-env"
           
-          # 2. _pth 파일 수정 (라이브러리 인식 활성화)
-          $pth = "python-env/python311._pth"
+          # 오염된 python-env가 아닌, 깨끗한 빈 폴더에 풉니다.
+          Expand-Archive -Path "python.zip" -DestinationPath $CleanDir -Force
+          
+          # 2. _pth 파일 수정
+          $pth = "$CleanDir/python311._pth"
           if (Test-Path $pth) {
               (Get-Content $pth) | ForEach-Object { $_ -replace "#import site", "import site" } | Set-Content $pth
           }
           
-          # 3. 라이브러리 설치 (System Python 사용 -> Target은 python-env 폴더)
-          Write-Host "Installing libraries using System Python..."
-          
-          # 3-1. 빌드 도구 업그레이드
+          # 3. 라이브러리 설치 (타겟: temp_build/Lib/site-packages)
+          Write-Host "Installing libraries..."
           python -m pip install --upgrade pip setuptools wheel
           
-          # 3-2. 실제 설치 (PyTorch CPU 버전 지정, 타겟을 Lib/site-packages로 명시)
-          python -m pip install -r requirements.txt --target python-env/Lib/site-packages --extra-index-url https://download.pytorch.org/whl/cpu --no-warn-script-location
+          # 타겟 경로를 $CleanDir 로 지정
+          python -m pip install -r requirements.txt --target "$CleanDir/Lib/site-packages" --extra-index-url https://download.pytorch.org/whl/cpu --no-warn-script-location
           
-          # ----------------------------------------------------------------
-          # 4. DLL 구조 작전 (에러 방지용 경로 체크 추가)
-          # ----------------------------------------------------------------
-          Write-Host "Copying DLLs to root..."
-          if (Test-Path "python-env/Lib/site-packages") {
-              Get-ChildItem -Path "python-env/Lib/site-packages" -Recurse -Filter "*.dll" | Copy-Item -Destination "python-env" -Force -ErrorAction SilentlyContinue
-          } else {
-              Write-Host "Warning: Lib/site-packages not found. Skipping DLL copy."
+          # 4. DLL 복사 (새 폴더 내부에서 이동)
+          Write-Host "Copying DLLs..."
+          if (Test-Path "$CleanDir/Lib/site-packages") {
+              Get-ChildItem -Path "$CleanDir/Lib/site-packages" -Recurse -Filter "*.dll" | Copy-Item -Destination $CleanDir -Force -ErrorAction SilentlyContinue
+          }
+
+          # 5. [핵심] 교체 작전 (Switch)
+          # 깃허브에서 딸려온 오염된 python-env가 있다면 지금 삭제
+          if (Test-Path "python-env") {
+              Write-Host "Destroying infected python-env folder..."
+              Remove-Item -Path "python-env" -Recurse -Force
           }
           
-          # 5. 용량 최적화
-          if (Test-Path "python.zip") { Remove-Item "python.zip" }
+          # 깨끗하게 만든 폴더의 이름을 python-env로 변경 (최종 완성)
+          Rename-Item -Path $CleanDir -NewName "python-env"
+          
+          # 정리
+          Remove-Item "python.zip" -Force
           Get-ChildItem -Path "python-env" -Recurse -Filter "__pycache__" | Remove-Item -Recurse -Force
 
-      # python-env 폴더 압축
       - name: Zip python-env folder
         run: 7z a python-env.zip python-env
 
-      # 릴리즈 업로드
       - name: Upload to Release
         uses: softprops/action-gh-release@v1
         with:
           files: python-env.zip
           prerelease: true
-          draft: false
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
