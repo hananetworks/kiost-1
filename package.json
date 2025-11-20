@@ -1,6 +1,6 @@
 {
   "name": "maxee-ticketing",
-  "version": "1.0.17",
+  "version": "1.0.18",
   "description": "hana US kiosk-first > object: ticket",
   "main": "electron/src/main.js",
   "repository": {
@@ -24,6 +24,7 @@
     "publish": [
       {
         "provider": "github",
+        "releaseType": "release",
         "owner": "hananetworks",
         "repo": "kiost-1"
       }
