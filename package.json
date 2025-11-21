@@ -1,11 +1,11 @@
 {
   "name": "maxee-ticketing",
-  "version": "1.0.20",
+  "version": "1.0.21",
   "description": "hana US kiosk-first > object: ticket",
   "main": "electron/src/main.js",
   "repository": {
     "type": "git",
-    "url": "https://github.com/hananetworks/kiost-1.git"ㄴ
+    "url": "https://github.com/hananetworks/kiost-1.git"
   },
   "scripts": {
     "dev:react": "vite --config vite.config.js",
