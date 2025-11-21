@@ -113,70 +113,88 @@
 // }; => 유후 상태에서 업데이트.
 
 const { autoUpdater } = require('electron-updater');
-const { log } = require('../logging/logger'); // 로깅 모듈 사용
+const { log } = require('../logging/logger');
 
 let win;
 
+// [설정] 자동 다운로드 활성화
+autoUpdater.autoDownload = true;
+autoUpdater.allowPrerelease = false;
+
 /**
- * [업데이트] 업데이트 리스너 및 로직 초기화
- * - 수정사항: 유휴 상태/시간 체크 로직 제거 -> 무조건 즉시 설치
+ * [신규] 앱 시작 최우선 순위: 업데이트 확인을 '기다리는' 함수
+ * @returns {Promise<boolean>} true: 업데이트 있음(앱 시작 중단), false: 없음(계속 진행)
+ */
+function checkForUpdatesBlocking() {
+    log.info("[Updater] 시작 전 업데이트 확인 중... (Blocking Check)");
+
+    // [중요] Private 리포지토리 토큰 설정 (없으면 Public으로 동작)
+    if (process.env.GH_TOKEN) {
+        autoUpdater.requestHeaders = { "PRIVATE-TOKEN": process.env.GH_TOKEN };
+    }
+
+    return new Promise((resolve) => {
+        // 1. 업데이트 발견됨 -> true 반환 (Main에서 Python 로드 중단시킴)
+        autoUpdater.once('update-available', (info) => {
+            log.info(`[Updater] 🚀 새 버전 발견! (${info.version}). 다운로드를 시작하며 앱 구동을 일시 중지합니다.`);
+            resolve(true);
+        });
+
+        // 2. 업데이트 없음 -> false 반환 (Main이 Python 로드 진행)
+        autoUpdater.once('update-not-available', (info) => {
+            log.info('[Updater] 현재 최신 버전입니다. 앱 구동을 계속합니다.');
+            resolve(false);
+        });
+
+        // 3. 에러 발생 -> false 반환 (키오스크는 켜져야 하므로)
+        autoUpdater.once('error', (err) => {
+            log.error(`[Updater] 초기 업데이트 확인 실패: ${err.message}`);
+            resolve(false);
+        });
+
+        // [안전장치] 5초 동안 응답 없으면 무시하고 켬 (인터넷 느릴 때 멈춤 방지)
+        setTimeout(() => {
+            log.warn("[Updater] 업데이트 서버 응답 시간 초과. 일단 앱을 시작합니다.");
+            resolve(false);
+        }, 5000);
+
+        autoUpdater.checkForUpdates();
+    });
+}
+
+/**
+ * [기존 로직] 업데이트 리스너 및 주기적 확인 초기화
  */
 function initializeUpdater(mainWindow) {
     win = mainWindow;
-    log.info("[Updater] 업데이트 모듈 초기화 (즉시 설치 모드).");
+    log.info("[Updater] 백그라운드 업데이트 모듈 초기화.");
 
-    autoUpdater.autoDownload = true; // 업데이트 발견 시 자동 다운로드
-    autoUpdater.allowPrerelease = false; // 정식 버전만
+    // 리스너 초기화 (중복 방지 위해 removeAllListeners 권장되지만 여기선 생략)
 
-    autoUpdater.on('checking-for-update', () => {
-        log.info('[Updater] 업데이트 확인 중...');
-    });
-    autoUpdater.on('update-available', (info) => {
-        log.info(`[Updater] 🚀 새 버전 발견! (${info.version}) 다운로드를 시작합니다.`);
-    });
-    autoUpdater.on('update-not-available', (info) => {
-        log.info('[Updater] 현재 최신 버전입니다.');
-    });
-    autoUpdater.on('error', (err) => {
-        log.error(`[Updater Error] 업데이트 중 오류 발생: ${err}`);
-    });
     autoUpdater.on('download-progress', (progressObj) => {
-        // 로그 과다 방지를 위해 10% 단위나 1MB 이상일 때만 찍는 등으로 조절 가능
         log.info(`[Updater] 다운로드 속도: ${progressObj.bytesPerSecond} - ${progressObj.percent}%`);
     });
 
-    // [핵심 수정] 다운로드가 완료되면 조건 없이 즉시 설치
+    // 다운로드 완료 시 무조건 설치
     autoUpdater.on('update-downloaded', (info) => {
-        log.info('[Updater] ✅ 다운로드 완료. 3초 후 앱을 재시작하여 설치합니다.');
-
-        // 로그가 기록될 시간을 벌기 위해 3초 후 강제 재시작
+        log.info('[Updater] ✅ 다운로드 완료. 3초 후 재시작하여 설치합니다.');
         setTimeout(() => {
-            // quitAndInstall(isSilent, isForceRunAfter)
-            // true, true : 사용자에게 묻지 않고, 설치 후 강제로 앱 실행
             autoUpdater.quitAndInstall(true, true);
         }, 3000);
     });
 
-    // 1. 앱 켜지자마자 즉시 확인
-    autoUpdater.checkForUpdatesAndNotify();
-
-    // 2. 앱이 켜져있는 동안에도 1시간마다 주기적으로 확인 (키오스크용 필수 설정)
+    // (Blocking Check에서 이미 확인했으므로, 여기서는 주기적 확인만 스케줄링)
     setInterval(() => {
         log.info('[Updater] 주기적 업데이트 확인 (1시간 경과)...');
         autoUpdater.checkForUpdates();
     }, 60 * 60 * 1000);
 }
 
-/**
- * [호환성 유지]
- * 기존 ipcHandlers.js에서 이 함수를 호출하고 있으므로,
- * 에러가 나지 않게 빈 껍데기만 남겨둡니다.
- */
-function setInactivityStatus(status) {
-    // 즉시 업데이트 모드이므로 유휴 상태를 무시합니다.
-}
+// 호환성 유지
+function setInactivityStatus(status) {}
 
 module.exports = {
     initializeUpdater,
-    setInactivityStatus
+    setInactivityStatus,
+    checkForUpdatesBlocking // [추가] export 필수
 };
