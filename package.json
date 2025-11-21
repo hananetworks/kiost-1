@@ -1,6 +1,6 @@
 {
   "name": "maxee-ticketing",
-  "version": "1.0.27",
+  "version": "1.0.29",
   "description": "hana US kiosk-first > object: ticket",
   "main": "electron/src/main.js",
   "repository": {
@@ -66,7 +66,7 @@
         "from": "electron/workers",
         "to": "resources/main",
         "filter": [
-          "**/*.py"
+          "**/*"
         ]
       }
     ],
