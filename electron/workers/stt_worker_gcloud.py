@@ -8,6 +8,8 @@
 import os, sys, time, json, queue, threading, base64, traceback
 import pywintypes, win32pipe, win32file, win32con
 
+
+
 # 구글 클라이언트 라이브러리 임포트
 try:
     from google.cloud import speech

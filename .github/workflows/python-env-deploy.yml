@@ -15,59 +15,55 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Setup System Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.11'
-          architecture: 'x64'
+      # [중요] setup-python 단계 삭제! (시스템 파이썬 개입 차단)
 
-      - name: Build Isolated Python Environment
+      - name: Build Pure Isolated Python
         shell: powershell
         run: |
-          # 1. 격리된 폴더 생성
-          $CleanDir = "temp_build"
-          New-Item -ItemType Directory -Path $CleanDir -Force
-          Write-Host "Building in isolated directory: $CleanDir"
+          # 1. 작업 폴더 준비
+          $EnvName = "python-env"
+          if (Test-Path $EnvName) { Remove-Item $EnvName -Recurse -Force }
+          New-Item -ItemType Directory -Path $EnvName -Force
+          Write-Host "Building clean environment in: $EnvName"
 
-          # 2. 순정 파이썬 다운로드 & 해제
-          Invoke-WebRequest -Uri "https://www.python.org/ftp/python/3.11.9/python-3.11.9-embed-amd64.zip" -OutFile "python.zip"
-          Expand-Archive -Path "python.zip" -DestinationPath $CleanDir -Force
-          
-          # 3. 라이브러리 설치 (격리된 폴더로)
-          python -m pip install --upgrade pip setuptools wheel
-          python -m pip install -r requirements.txt --target "$CleanDir/Lib/site-packages" --extra-index-url https://download.pytorch.org/whl/cpu --no-warn-script-location
-          
-          # 4. DLL 복사
-          if (Test-Path "$CleanDir/Lib/site-packages") {
-              Get-ChildItem -Path "$CleanDir/Lib/site-packages" -Recurse -Filter "*.dll" | Copy-Item -Destination $CleanDir -Force -ErrorAction SilentlyContinue
-          }
-
-          # 5. ._pth 파일 생성 (핵심! 외부 경로 차단)
-          # kiosk_python._pth 라는 이름으로 생성해야 kiosk_python.exe가 읽습니다.
-          $pthContent = @(
-              "python311.zip",
-              ".",
-              "Lib/site-packages",
-              "import site"
-          )
-          Set-Content -Path "$CleanDir/kiosk_python._pth" -Value $pthContent
-          
-          # 기존 python311._pth는 삭제 (혼동 방지)
-          if (Test-Path "$CleanDir/python311._pth") { Remove-Item "$CleanDir/python311._pth" -Force }
-
-          # 6. 실행 파일 이름 변경 (kiosk_python.exe)
-          Rename-Item -Path "$CleanDir/python.exe" -NewName "kiosk_python.exe"
-
-          # 7. 교체 작전
-          if (Test-Path "python-env") { 
-              Write-Host "Destroying old python-env..."
-              Remove-Item -Path "python-env" -Recurse -Force 
-          }
-          Rename-Item -Path $CleanDir -NewName "python-env"
-          
-          # 정리
+          # 2. 순정 파이썬 3.11.9 다운로드 (Embeddable)
+          # (3.11.13 등 다른 버전이 섞이지 않도록 버전 고정)
+          $Url = "https://www.python.org/ftp/python/3.11.9/python-3.11.9-embed-amd64.zip"
+          Invoke-WebRequest -Uri $Url -OutFile "python.zip"
+          Expand-Archive -Path "python.zip" -DestinationPath $EnvName -Force
           Remove-Item "python.zip" -Force
-          Get-ChildItem -Path "python-env" -Recurse -Filter "__pycache__" | Remove-Item -Recurse -Force
+
+          # 3. 실행 파일 이름 변경
+          $PythonExe = "$EnvName\kiosk_python.exe"
+          Rename-Item -Path "$EnvName\python.exe" -NewName "kiosk_python.exe"
+
+          # 4. [핵심] ._pth 파일 수정 (pip 활성화를 위해 필수)
+          # 기존 #import site 주석을 제거해야 pip가 작동합니다.
+          $PthFile = "$EnvName\python311._pth"
+          (Get-Content $PthFile) -replace '#import site', 'import site' | Set-Content $PthFile
+          
+          # 5. pip 설치 (임베디드 파이썬이 직접 설치하게 함)
+          Write-Host "Installing pip..."
+          Invoke-WebRequest -Uri "https://bootstrap.pypa.io/get-pip.py" -OutFile "get-pip.py"
+          & $PythonExe get-pip.py --no-warn-script-location
+          Remove-Item "get-pip.py" -Force
+
+          # 6. 라이브러리 설치 (requirements.txt)
+          # 시스템 파이썬이 아닌 '$PythonExe'를 사용하는 것이 포인트입니다.
+          Write-Host "Installing requirements..."
+          & $PythonExe -m pip install -r requirements.txt --no-warn-script-location --extra-index-url https://download.pytorch.org/whl/cpu
+
+          # 7. PyWin32 DLL 문제 해결 (임베디드 환경 고질병 수정)
+          # pywintypes311.dll 등이 시스템 경로가 아닌 옆에 있어야 인식됨
+          Write-Host "Fixing PyWin32 DLLs..."
+          $PyWin32Dir = "$EnvName\Lib\site-packages\pywin32_system32"
+          if (Test-Path $PyWin32Dir) {
+              Get-ChildItem -Path $PyWin32Dir -Filter "*.dll" | Copy-Item -Destination $EnvName -Force
+          }
+
+          # 8. 불필요 파일 정리 (__pycache__ 등)
+          Get-ChildItem -Path $EnvName -Recurse -Filter "__pycache__" | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+          Get-ChildItem -Path $EnvName -Recurse -Filter "*.dist-info" | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 
       - name: Zip python-env folder
         run: 7z a python-env.zip python-env

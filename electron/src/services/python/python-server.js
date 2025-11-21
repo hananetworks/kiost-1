@@ -54,9 +54,12 @@ function initializePythonServices(mainWindow, pythonExePath) {
 
     // [핵심 변경] pythonPath를 배치 파일 경로로 변경
     if (app.isPackaged) {
+        // 배포 모드: 배치 파일 사용 (환경변수 등 배포 환경 보정용)
         shellOptions.pythonPath = path.join(process.resourcesPath, 'main', 'run_kiosk_python.bat');
     } else {
-        shellOptions.pythonPath = path.join(__dirname, '..', '..', '..', 'workers', 'run_kiosk_python.bat');
+        // 개발 모드: 배치 파일을 무시하고, main.js에서 전달받은 경로를 직접 사용
+        log.info(`[Python] 개발 모드: 배치 파일 대신 직접 실행 -> ${pythonExePath}`);
+        shellOptions.pythonPath = pythonExePath;
     }
 
     try {

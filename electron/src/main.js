@@ -131,44 +131,59 @@ app.whenReady().then(async () => {
     });
 
     // ==========================================================================
-    // [핵심 변경] 0순위: 앱 업데이트 확인 (파이썬 설치 전에 실행)
-    // 업데이트가 있으면 여기서 멈추고(return), 다운로드 및 재시작을 대기함
+    // [0순위] 앱 자체 업데이트 확인 (Electron 앱 업데이트)
     // ==========================================================================
     if (app.isPackaged) {
         try {
             const isUpdating = await checkForUpdatesBlocking();
-
             if (isUpdating) {
                 log.info("[Main] ⛔ 업데이트가 감지되어 앱 구동을 중단하고 설치를 대기합니다.");
-                // 여기서 return하면 아래 코드(파이썬 설치 등)는 실행되지 않습니다.
-                // updateManager에서 다운로드 완료 시 자동으로 quitAndInstall을 호출합니다.
-                return;
+                return; // 업데이트 중이면 여기서 멈춤
             }
         } catch (err) {
             log.error(`[Main] 초기 업데이트 확인 중 오류 (무시하고 진행): ${err.message}`);
         }
     }
-    // ==========================================================================
 
     // 4. 로컬 서버 시작 (패키징 시)
     if (app.isPackaged) {
         startLocalServer();
     }
 
-    // 5. 메인 윈도우 생성
+    // 5. 메인 윈도우 생성 (여기서 win이 생성됨)
     createWindow();
 
-    // 6. Python 환경 점검 및 서비스 초기화 (업데이트 없을 때만 실행됨)
+    // ==========================================================================
+    // [핵심 변경] 6. Python 환경 점검 및 서비스 초기화
+    // ==========================================================================
     try {
-        // 파이썬 환경이 없으면 다운로드 및 설치
-        const pythonExePath = await ensurePythonEnvironment(win);
+        let pythonExePath;
 
-        // 확보된 파이썬 실행 파일 경로를 서비스에 전달
+        if (app.isPackaged) {
+            // [배포 모드] 버전 체크 및 다운로드 수행 (win이 있어야 진행률 표시 가능)
+            pythonExePath = await ensurePythonEnvironment(win);
+        } else {
+            // [개발 모드] 다운로드 로직 생략하고 로컬 경로 강제 지정
+            log.info("[Main] 개발 모드: Python 다운로드 점검을 생략합니다.");
+
+            // 개발 중 받아둔 python-env 폴더 경로 사용
+            pythonExePath = path.join(app.getPath('userData'), 'python-env', 'kiosk_python.exe');
+        }
+
+        // 경로 유효성 검사 (개발 모드일 때 파일이 없으면 경고)
+        if (!fs.existsSync(pythonExePath) && !app.isPackaged) {
+            log.warn(`[Main Warning] 개발 모드인데 Python 파일이 없습니다: ${pythonExePath}`);
+            log.warn("최초 1회는 배포 모드로 빌드하여 실행하거나, 수동으로 파일을 해당 위치에 복사해야 합니다.");
+        }
+
+        // 서비스 시작
         initializePythonServices(win, pythonExePath);
+
     } catch (err) {
         log.error(`[Main FATAL] AI 엔진 초기화 실패: ${err.message}`);
-        dialog.showErrorBox("오류", "AI 엔진 설치에 실패했습니다. 인터넷 연결을 확인해주세요.");
+        dialog.showErrorBox("오류", "AI 엔진 초기화에 실패했습니다.");
     }
+    // ==========================================================================
 
     // 7. IPC 핸들러 등록
     registerIpcHandlers(win);
