@@ -38,7 +38,9 @@ function initializePythonServices(mainWindow, pythonExePath) {
     const baseEnv = {
         ...process.env,   // 윈도우 기본 설정은 가져옴
         PYTHONPATH: '',   // 로컬 파이썬 라이브러리 경로 무시
-        PYTHONHOME: ''    // 로컬 파이썬 설치 경로 무시
+        PYTHONHOME: '', // 로컬 파이썬 설치 경로 무시
+        PATH: `${path.dirname(pythonExePath)};${path.join(path.dirname(pythonExePath), 'Scripts')};${process.env.PATH}`
+
     };
 
     const shellOptions = {
