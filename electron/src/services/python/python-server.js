@@ -108,9 +108,9 @@ function setupPythonListeners() {
 function loadPipeClients() {
     try {
         // (경로가 맞는지 확인하세요. main.js 위치 기준일 수 있습니다)
-        ttsPipeClient = require('../../voice/ttsPipeClient');
-        ttsPipeClientEN = require('../../voice/ttsPipeClientEN');
-        sttPipeClient = require('../../voice/sttPipeClient');
+        ttsPipeClient = require('../voice/ttsPipeClient');
+        ttsPipeClientEN = require('../voice/ttsPipeClientEN');
+        sttPipeClient = require('../voice/sttPipeClient');
         log.info("[Python] 모든 파이프 클라이언트 모듈 로드 완료.");
         setupPipeListeners();
     } catch (e) {
