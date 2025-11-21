@@ -24,54 +24,47 @@ jobs:
       - name: Build Isolated Python Environment
         shell: powershell
         run: |
-          # [전략 수정] 아예 새로운 이름의 폴더에서 작업 시작 (오염 원천 차단)
+          # 1. 격리된 폴더 생성
           $CleanDir = "temp_build"
           New-Item -ItemType Directory -Path $CleanDir -Force
           Write-Host "Building in isolated directory: $CleanDir"
 
-          # 1. 이동식 파이썬(3.11.9 순정) 다운로드 -> temp_build에 압축 해제
-          Write-Host "Downloading Embeddable Python 3.11.9..."
+          # 2. 순정 파이썬 다운로드 & 해제
           Invoke-WebRequest -Uri "https://www.python.org/ftp/python/3.11.9/python-3.11.9-embed-amd64.zip" -OutFile "python.zip"
-          
-          # 오염된 python-env가 아닌, 깨끗한 빈 폴더에 풉니다.
           Expand-Archive -Path "python.zip" -DestinationPath $CleanDir -Force
           
-          # 2. _pth 파일 수정
-          $pth = "$CleanDir/python311._pth"
-          if (Test-Path $pth) {
-              (Get-Content $pth) | ForEach-Object { $_ -replace "#import site", "import site" } | Set-Content $pth
-          }
-          
-          # 3. 라이브러리 설치 (타겟: temp_build/Lib/site-packages)
-          Write-Host "Installing libraries..."
+          # 3. 라이브러리 설치 (격리된 폴더로)
           python -m pip install --upgrade pip setuptools wheel
-          
-          # 타겟 경로를 $CleanDir 로 지정
           python -m pip install -r requirements.txt --target "$CleanDir/Lib/site-packages" --extra-index-url https://download.pytorch.org/whl/cpu --no-warn-script-location
           
-          # 4. DLL 복사 (새 폴더 내부에서 이동)
-          Write-Host "Copying DLLs..."
+          # 4. DLL 복사
           if (Test-Path "$CleanDir/Lib/site-packages") {
               Get-ChildItem -Path "$CleanDir/Lib/site-packages" -Recurse -Filter "*.dll" | Copy-Item -Destination $CleanDir -Force -ErrorAction SilentlyContinue
           }
 
-          # 5. [핵심] 교체 작전 (Switch)
-          # 깃허브에서 딸려온 오염된 python-env가 있다면 지금 삭제
-          if (Test-Path "python-env") {
-              Write-Host "Destroying infected python-env folder..."
-              Remove-Item -Path "python-env" -Recurse -Force
-          }
+          # 5. ._pth 파일 생성 (핵심! 외부 경로 차단)
+          # kiosk_python._pth 라는 이름으로 생성해야 kiosk_python.exe가 읽습니다.
+          $pthContent = @(
+              "python311.zip",
+              ".",
+              "Lib/site-packages",
+              "import site"
+          )
+          Set-Content -Path "$CleanDir/kiosk_python._pth" -Value $pthContent
           
-          # 깨끗하게 만든 폴더의 이름을 python-env로 변경 (최종 완성)
+          # 기존 python311._pth는 삭제 (혼동 방지)
+          if (Test-Path "$CleanDir/python311._pth") { Remove-Item "$CleanDir/python311._pth" -Force }
+
+          # 6. 실행 파일 이름 변경 (kiosk_python.exe)
+          Rename-Item -Path "$CleanDir/python.exe" -NewName "kiosk_python.exe"
+
+          # 7. 교체 작전
+          if (Test-Path "python-env") { 
+              Write-Host "Destroying old python-env..."
+              Remove-Item -Path "python-env" -Recurse -Force 
+          }
           Rename-Item -Path $CleanDir -NewName "python-env"
           
-          Rename-Item -Path "python-env/python.exe" -NewName "kiosk_python.exe"
-          
-          Rename-Item -Path "python-env/python311._pth" -NewName "kiosk_python._pth"
-          
-          Set-Content -Path "python-env/pyvenv.cfg" -Value "home = ."
-          
-        
           # 정리
           Remove-Item "python.zip" -Force
           Get-ChildItem -Path "python-env" -Recurse -Filter "__pycache__" | Remove-Item -Recurse -Force
