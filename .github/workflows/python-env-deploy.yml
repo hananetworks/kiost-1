@@ -67,6 +67,10 @@ jobs:
           
           Rename-Item -Path "python-env/python.exe" -NewName "kiosk_python.exe"
           
+          Rename-Item -Path "python-env/python311._pth" -NewName "kiosk_python._pth"
+          
+          Set-Content -Path "python-env/pyvenv.cfg" -Value "home = ."
+          
         
           # 정리
           Remove-Item "python.zip" -Force
