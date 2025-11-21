@@ -8,7 +8,7 @@ const express = require('express');
 const { log, initializeLogging, startResourceLogging } = require('./logging/logger');
 const { initializeConfig } = require('./config/setup');
 const { initializeUpdater } = require('./updater/updateManager');
-const { initializePythonServices, cleanupPythonServices } = require('./services/python');
+const { initializePythonServices, cleanupPythonServices } = require('./services/python/python-server');
 const { registerIpcHandlers } = require('./ipcHandlers'); // IPC 핸들러
 
 // [추가] 파이썬 다운로더 모듈 로드

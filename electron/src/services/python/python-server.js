@@ -10,7 +10,7 @@ let win;
 /**
  * [서비스] PythonShell을 생성하고 초기화합니다.
  * @param {BrowserWindow} mainWindow
- * @param {string} pythonExePath - [수정] 다운로드 받은 파이썬 실행 파일 경로 (필수)
+ * @param {string} pythonExePath - 다운로드 받은 파이썬 실행 파일 경로 (필수)
  */
 function initializePythonServices(mainWindow, pythonExePath) {
     win = mainWindow;
@@ -23,44 +23,52 @@ function initializePythonServices(mainWindow, pythonExePath) {
         return;
     }
 
-    // 2. 스크립트 경로 설정 (여전히 앱 내부에 포함됨)
+    // 2. 스크립트 경로 설정
     let scriptPath;
     if (app.isPackaged) {
-        // 배포 시: resources/main 폴더 (package.json에서 workers->resources/main으로 복사했음)
         scriptPath = path.join(process.resourcesPath, 'main');
     } else {
-        // 개발 시: electron/workers 폴더
         scriptPath = path.join(__dirname, '..', '..', 'workers');
     }
 
     log.info(`[Python] ScriptPath: ${scriptPath}`);
     log.info(`[Python] PythonPath (External): ${pythonExePath}`);
 
+    // [중요] 환경변수 격리 설정 (Anaconda 충돌 방지)
+    const baseEnv = {
+        ...process.env,   // 윈도우 기본 설정은 가져옴
+        PYTHONPATH: '',   // 로컬 파이썬 라이브러리 경로 무시
+        PYTHONHOME: ''    // 로컬 파이썬 설치 경로 무시
+    };
+
     const shellOptions = {
+        mode: 'text',
         pythonOptions: ['-u'],
-        pythonPath: pythonExePath, // [수정] 전달받은 외부 파이썬 경로 사용
+        pythonPath: pythonExePath, // 다운로드 받은 순정 파이썬 사용
         scriptPath: scriptPath,
-        args: [app.isPackaged ? 'packaged' : 'dev', process.resourcesPath]
+        args: [app.isPackaged ? 'packaged' : 'dev', process.resourcesPath],
+        env: baseEnv // [수정] 격리된 환경변수 적용
     };
 
     try {
-        // PythonShell 실행
+        // PythonShell 실행 (TTS)
         ttsKrShell = new PythonShell('tts_worker_pipe_kr.py', shellOptions);
         ttsEnShell = new PythonShell('tts_worker_pipe_en.py', shellOptions);
 
-        // STT용 환경변수 설정
-        const sttEnv = { ...process.env };
+        // STT용 환경변수 설정 (baseEnv를 복사해서 사용해야 함)
+        const sttEnv = { ...baseEnv };
         if (process.env.GCLOUD_KEY_PATH) {
             sttEnv['GOOGLE_APPLICATION_CREDENTIALS'] = process.env.GCLOUD_KEY_PATH;
         }
 
+        // PythonShell 실행 (STT) - 격리된 env에 구글 키만 추가됨
         sttShell = new PythonShell('stt_worker_gcloud.py', {
             ...shellOptions,
             env: sttEnv
         });
 
         setupPythonListeners();
-        log.info("[Python] 프로세스 시작 성공");
+        log.info("[Python] 프로세스 시작 성공 (환경변수 격리 적용됨)");
 
     } catch (e) {
         log.error(`[Python FATAL] PythonShell 생성 실패: ${e.message}`);
@@ -77,11 +85,12 @@ function initializePythonServices(mainWindow, pythonExePath) {
  * [서비스] Python 스크립트의 표준 출력/오류를 로깅합니다.
  */
 function setupPythonListeners() {
-    // (기존 코드 동일)
     ttsKrShell.on('message', (message) => log.info(`[TTS_KR_MSG] ${message}`));
     ttsKrShell.on('stderr', (stderr) => log.warn(`[TTS_KR_ERR] ${stderr}`));
+
     ttsEnShell.on('message', (message) => log.info(`[TTS_EN_MSG] ${message}`));
     ttsEnShell.on('stderr', (stderr) => log.warn(`[TTS_EN_ERR] ${stderr}`));
+
     sttShell.on('message', (message) => log.info(`[STT_MSG] ${message}`));
     sttShell.on('stderr', (stderr) => log.warn(`[STT_ERR] ${stderr}`));
 }
@@ -91,7 +100,6 @@ function setupPythonListeners() {
  */
 function loadPipeClients() {
     try {
-        // (경로가 맞는지 확인하세요. main.js 위치 기준일 수 있습니다)
         ttsPipeClient = require('../voice/ttsPipeClient');
         ttsPipeClientEN = require('../voice/ttsPipeClientEN');
         sttPipeClient = require('../voice/sttPipeClient');
@@ -118,7 +126,6 @@ function connectPipeClients() {
  * [서비스] 파이프 클라이언트 이벤트 리스너
  */
 function setupPipeListeners() {
-    // (기존 코드 동일)
     if (ttsPipeClient) {
         ttsPipeClient.on('playback-finished', () => { if (win) win.webContents.send('tts:playback-finished'); });
         ttsPipeClient.on('connected', () => log.info("[Main] TTS (KR) 파이프 연결됨."));
