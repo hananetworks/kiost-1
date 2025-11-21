@@ -7,14 +7,14 @@ const { log } = require('./logging/logger');
 const dotenv = require('dotenv');
 
 // [설정] 파이썬 배포 태그와 일치해야 합니다!
-const REQUIRED_ENV_VERSION = 'env-v1.0.11';
+const REQUIRED_ENV_VERSION = 'env-v1.0.15';
 const REPO_OWNER = 'hananetworks';
 const REPO_NAME = 'kiost-1';
 
 const USER_DATA_PATH = app.getPath('userData');
 const PYTHON_ENV_PATH = path.join(USER_DATA_PATH, 'python-env');
 const VERSION_FILE = path.join(PYTHON_ENV_PATH, 'version.txt');
-const PYTHON_EXE = path.join(PYTHON_ENV_PATH, 'python.exe');
+const PYTHON_EXE = path.join(PYTHON_ENV_PATH, 'kiosk_python.exe');
 
 // [중요] .env 파일에서 토큰을 안전하게 로드하는 함수
 function loadEnvToken() {

@@ -65,6 +65,9 @@ jobs:
           # 깨끗하게 만든 폴더의 이름을 python-env로 변경 (최종 완성)
           Rename-Item -Path $CleanDir -NewName "python-env"
           
+          Rename-Item -Path "python-env/python.exe" -NewName "kiosk_python.exe"
+          
+        
           # 정리
           Remove-Item "python.zip" -Force
           Get-ChildItem -Path "python-env" -Recurse -Filter "__pycache__" | Remove-Item -Recurse -Force
