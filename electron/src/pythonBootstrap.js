@@ -7,7 +7,7 @@ const { log } = require('./logging/logger');
 const dotenv = require('dotenv');
 
 // [설정] 파이썬 배포 태그와 일치해야 합니다!
-const REQUIRED_ENV_VERSION = 'env-v1.0.19';
+const REQUIRED_ENV_VERSION = 'env-v1.0.21';
 const REPO_OWNER = 'hananetworks';
 const REPO_NAME = 'kiost-1';
 
