@@ -15,53 +15,74 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      # [중요] setup-python 단계 삭제! (시스템 파이썬 개입 차단)
+      # [1단계] 시스템 파이썬 세팅 (컴파일 도우미용)
+      # 임베디드 파이썬에는 없는 'Python.h'를 빌려쓰기 위해 잠깐 사용합니다.
+      - name: Setup System Python (For Compilation)
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          architecture: 'x64'
 
+      # [2단계] 문제의 라이브러리들을 미리 컴파일 (.whl 파일 생성)
+      # simpleaudio와 eunjeon을 여기서 시스템 파이썬의 힘으로 강제 변환합니다.
+      - name: Build Wheels for C-Extensions
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Path "wheelhouse" -Force
+          
+          # 시스템 파이썬(python)을 사용해 pip wheel 명령 실행
+          # 만약 여기서도 실패하면, 해당 라이브러리는 Python 3.11을 지원하지 않는 것입니다.
+          Write-Host "Building difficult packages..."
+          python -m pip wheel simpleaudio eunjeon --wheel-dir=./wheelhouse
+          
+          # 나머지 requirements.txt에 있는 것들도 호환성 확보를 위해 휠로 미리 받아두면 더 좋습니다.
+          # (시간이 걸린다면 위 두 개만 해도 됩니다)
+
+      # [3단계] 순정 임베디드 파이썬 구축 (기존 로직)
       - name: Build Pure Isolated Python
         shell: powershell
         run: |
-          # 1. 작업 폴더 준비
+          # --- 1. 작업 폴더 준비 ---
           $EnvName = "python-env"
           if (Test-Path $EnvName) { Remove-Item $EnvName -Recurse -Force }
           New-Item -ItemType Directory -Path $EnvName -Force
-          Write-Host "Building clean environment in: $EnvName"
 
-          # 2. 순정 파이썬 3.11.9 다운로드 (Embeddable)
-          # (3.11.13 등 다른 버전이 섞이지 않도록 버전 고정)
+          # --- 2. 순정 파이썬 다운로드 ---
           $Url = "https://www.python.org/ftp/python/3.11.9/python-3.11.9-embed-amd64.zip"
           Invoke-WebRequest -Uri $Url -OutFile "python.zip"
           Expand-Archive -Path "python.zip" -DestinationPath $EnvName -Force
           Remove-Item "python.zip" -Force
 
-          # 3. 실행 파일 이름 변경
+          # --- 3. 실행 파일 이름 변경 ---
           $PythonExe = "$EnvName\kiosk_python.exe"
           Rename-Item -Path "$EnvName\python.exe" -NewName "kiosk_python.exe"
 
-          # 4. [핵심] ._pth 파일 수정 (pip 활성화를 위해 필수)
-          # 기존 #import site 주석을 제거해야 pip가 작동합니다.
+          # --- 4. ._pth 파일 수정 (pip 활성화) ---
           $PthFile = "$EnvName\python311._pth"
           (Get-Content $PthFile) -replace '#import site', 'import site' | Set-Content $PthFile
           
-          # 5. pip 설치 (임베디드 파이썬이 직접 설치하게 함)
-          Write-Host "Installing pip..."
+          # --- 5. pip 설치 ---
           Invoke-WebRequest -Uri "https://bootstrap.pypa.io/get-pip.py" -OutFile "get-pip.py"
           & $PythonExe get-pip.py --no-warn-script-location
           Remove-Item "get-pip.py" -Force
 
-          # 6. 라이브러리 설치 (requirements.txt)
-          # 시스템 파이썬이 아닌 '$PythonExe'를 사용하는 것이 포인트입니다.
-          Write-Host "Installing requirements..."
+          # --- 6. 라이브러리 설치 (핵심 변경 사항) ---
+          # 아까 2단계에서 만든 'wheelhouse' 폴더를 우선적으로 참조하게 합니다.
+          Write-Host "Installing from pre-built wheels..."
+          
+          # (A) 컴파일해둔 휠 먼저 설치
+          & $PythonExe -m pip install simpleaudio eunjeon --no-index --find-links=./wheelhouse --no-warn-script-location
+          
+          # (B) 나머지 라이브러리 설치
           & $PythonExe -m pip install -r requirements.txt --no-warn-script-location --extra-index-url https://download.pytorch.org/whl/cpu
 
-          # 7. PyWin32 DLL 문제 해결 (임베디드 환경 고질병 수정)
-          # pywintypes311.dll 등이 시스템 경로가 아닌 옆에 있어야 인식됨
-          Write-Host "Fixing PyWin32 DLLs..."
+          # --- 7. PyWin32 DLL 복사 ---
           $PyWin32Dir = "$EnvName\Lib\site-packages\pywin32_system32"
           if (Test-Path $PyWin32Dir) {
               Get-ChildItem -Path $PyWin32Dir -Filter "*.dll" | Copy-Item -Destination $EnvName -Force
           }
 
-          # 8. 불필요 파일 정리 (__pycache__ 등)
+          # --- 8. 정리 ---
           Get-ChildItem -Path $EnvName -Recurse -Filter "__pycache__" | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
           Get-ChildItem -Path $EnvName -Recurse -Filter "*.dist-info" | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 
