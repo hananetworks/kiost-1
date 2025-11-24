@@ -117,20 +117,62 @@ const { log } = require('../logging/logger');
 const { app } = require('electron');
 const fs = require('fs');
 const path = require('path');
-const dotenv = require('dotenv'); // [추가] 모듈 필요
+const dotenv = require('dotenv');
 
 // [설정] 자동 다운로드 활성화
 autoUpdater.autoDownload = true;
 autoUpdater.allowPrerelease = false;
 
+// [설정] 최대 재시도 횟수
+const MAX_RETRIES = 3;
+
 /**
- * [신규] 앱 시작 최우선 순위: 업데이트 확인을 '기다리는' 함수
+ * [신규] 앱 시작 최우선 순위: 업데이트 확인 (재시도 로직 포함)
  * @returns {Promise<boolean>} true: 업데이트 있음(앱 시작 중단), false: 없음(계속 진행)
  */
-function checkForUpdatesBlocking() {
-    log.info("[Updater] 🔍 시작 전 업데이트 확인 중... (Blocking Check)");
+async function checkForUpdatesBlocking() {
+    log.info("[Updater] 🔍 시작 전 업데이트 확인 중... (Blocking Check + Retry)");
 
-    // [핵심 추가] .env 파일에서 토큰 로드 및 주입 로직 ========================
+    // 1. 인증 설정 (Private Repo 토큰 설정) - 기존에 잘 되던 코드 유지
+    setupAuth();
+
+    // 2. 재시도 루프 (최대 3회)
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+        try {
+            log.info(`[Updater] 업데이트 시도 ${attempt}/${MAX_RETRIES}...`);
+
+            // 업데이트 체크 실행 (Promise)
+            const result = await runUpdateCheck();
+
+            // 결과 처리
+            if (result === 'UPDATE_FOUND') {
+                return true; // 업데이트 설치 중이므로 앱 시작 중단
+            }
+            if (result === 'NO_UPDATE') {
+                return false; // 업데이트 없음 -> 앱 시작 계속
+            }
+
+        } catch (err) {
+            log.warn(`[Updater] ${attempt}회차 실패: ${err.message}`);
+
+            // 마지막 시도가 아니면 2초 대기 후 재시도
+            if (attempt < MAX_RETRIES) {
+                log.info("[Updater] 2초 후 재시도합니다...");
+                await new Promise(r => setTimeout(r, 2000));
+            } else {
+                // 3번 다 실패하면 포기하고 앱 시작 (이게 롤백 효과)
+                log.error("[Updater] ❌ 업데이트 실패 (최대 재시도 초과). 현재 버전으로 앱을 시작합니다.");
+                return false;
+            }
+        }
+    }
+    return false;
+}
+
+/**
+ * [내부 함수] 인증 설정 (사용자님의 기존 잘 되던 코드)
+ */
+function setupAuth() {
     try {
         const envPath = app.isPackaged
             ? path.join(process.resourcesPath, '.env')
@@ -139,23 +181,22 @@ function checkForUpdatesBlocking() {
         if (fs.existsSync(envPath)) {
             const envConfig = dotenv.parse(fs.readFileSync(envPath));
             if (envConfig.GH_TOKEN) {
-                // 1. 환경변수 등록
                 process.env.GH_TOKEN = envConfig.GH_TOKEN;
 
-                // [핵심 수정] Private Repo라고 명시적으로 알려줍니다! (이게 없어서 404 뜸)
+                // [핵심] Private Repo 설정 (setFeedURL)
                 autoUpdater.setFeedURL({
                     provider: 'github',
-                    owner: 'hananetworks',  // 리포지토리 소유자
-                    repo: 'kiost-1',        // 리포지토리 이름
-                    private: true,          // <--- ★★★ 제일 중요함 ★★★
+                    owner: 'hananetworks',
+                    repo: 'kiost-1',
+                    private: true,
                     token: envConfig.GH_TOKEN
                 });
 
-                // 2. 헤더 강제 주입 (안전장치)
+                // [핵심] 헤더 강제 주입
                 autoUpdater.requestHeaders = {
                     "Authorization": `token ${envConfig.GH_TOKEN}`
                 };
-                log.info("[Updater] Private Repo 모드(setFeedURL) 설정 완료.");
+                log.info("[Updater] Private Repo 인증(setFeedURL) 설정 완료.");
             } else {
                 log.warn("[Updater] .env 파일은 있지만 GH_TOKEN이 없습니다.");
             }
@@ -163,48 +204,68 @@ function checkForUpdatesBlocking() {
             log.warn(`[Updater] .env 파일을 찾을 수 없습니다: ${envPath}`);
         }
     } catch (e) {
-        log.error(`[Updater] 토큰 설정 중 오류: ${e.message}`);
+        log.error(`[Updater] 인증 설정 중 오류: ${e.message}`);
     }
-    // =======================================================================
+}
 
-    return new Promise((resolve) => {
-        // [안전장치] 5초 타임아웃
-        const safetyTimer = setTimeout(() => {
-            log.warn("[Updater] 업데이트 서버 응답 시간 초과. 일단 앱을 시작합니다.");
-            resolve(false);
-        }, 5000);
+/**
+ * [내부 함수] 실제 업데이트 체크 및 이벤트 핸들링
+ * @returns {Promise<string>} 'UPDATE_FOUND', 'NO_UPDATE'
+ */
+function runUpdateCheck() {
+    return new Promise((resolve, reject) => {
+        // 10초 타임아웃 (무한 대기 방지)
+        const timer = setTimeout(() => {
+            reject(new Error("Timeout (10s)"));
+        }, 10000);
 
-        // 1. 업데이트 발견됨
+        // 리스너 정리 함수
+        const cleanUp = () => {
+            clearTimeout(timer);
+            autoUpdater.removeAllListeners('update-available');
+            autoUpdater.removeAllListeners('update-not-available');
+            autoUpdater.removeAllListeners('update-downloaded');
+            autoUpdater.removeAllListeners('error');
+            autoUpdater.removeAllListeners('download-progress');
+        };
+
+        // 1. 업데이트 발견 -> 다운로드 시작
         autoUpdater.once('update-available', (info) => {
-            clearTimeout(safetyTimer);
-            log.info(`[Updater] 🚀 새 버전 발견! (${info.version}). 다운로드를 시작하며 앱 구동을 일시 중지합니다.`);
-
-            autoUpdater.once('update-downloaded', (info) => {
-                log.info('[Updater] ✅ 다운로드 완료. 즉시 설치 및 재시작합니다.');
-                autoUpdater.quitAndInstall(true, true);
-            });
-
-            autoUpdater.on('download-progress', (progressObj) => {
-                log.info(`[Updater] 다운로드 속도: ${parseInt(progressObj.bytesPerSecond / 1024)} KB/s (${parseInt(progressObj.percent)}%)`);
-            });
-
-            resolve(true); // Main 프로세스 정지 신호
+            log.info(`[Updater] 🚀 새 버전 발견! (${info.version}). 다운로드를 시작합니다.`);
+            // 여기서 resolve 하지 않고 download-progress/downloaded를 기다림
         });
 
-        // 2. 업데이트 없음
+        // 2. 다운로드 진행률
+        autoUpdater.on('download-progress', (progressObj) => {
+            log.info(`[Updater] 다운로드: ${parseInt(progressObj.percent)}% (${parseInt(progressObj.bytesPerSecond / 1024)} KB/s)`);
+        });
+
+        // 3. 다운로드 완료 -> 설치 및 재시작
+        autoUpdater.once('update-downloaded', (info) => {
+            cleanUp();
+            log.info('[Updater] ✅ 다운로드 및 검증 완료. 설치를 위해 재시작합니다.');
+
+            // 즉시 설치 및 재시작
+            autoUpdater.quitAndInstall(true, true);
+
+            resolve('UPDATE_FOUND');
+        });
+
+        // 4. 업데이트 없음
         autoUpdater.once('update-not-available', (info) => {
-            clearTimeout(safetyTimer);
-            log.info('[Updater] 현재 최신 버전입니다. 앱 구동을 계속합니다.');
-            resolve(false);
+            cleanUp();
+            log.info('[Updater] 현재 최신 버전입니다.');
+            resolve('NO_UPDATE');
         });
 
-        // 3. 에러 발생
+        // 5. 에러 발생 (여기서 reject하면 위쪽 루프에서 잡아서 재시도함)
         autoUpdater.once('error', (err) => {
-            clearTimeout(safetyTimer);
-            log.error(`[Updater] 초기 업데이트 확인 실패: ${err.message}`);
-            resolve(false);
+            cleanUp();
+            log.error(`[Updater] 체크 중 에러: ${err.message}`);
+            reject(err);
         });
 
+        // 업데이트 체크 시작
         autoUpdater.checkForUpdates();
     });
 }
@@ -214,20 +275,9 @@ function checkForUpdatesBlocking() {
  */
 function initializeUpdater(mainWindow) {
     log.info("[Updater] 백그라운드 업데이트 모듈 초기화.");
-
-    autoUpdater.removeAllListeners('update-downloaded');
-    autoUpdater.removeAllListeners('download-progress');
-
-    autoUpdater.on('update-downloaded', (info) => {
-        log.info('[Updater] (백그라운드) 다운로드 완료. 3초 후 재시작합니다.');
-        setTimeout(() => {
-            autoUpdater.quitAndInstall(true, true);
-        }, 3000);
-    });
-
+    // 주기적 확인 (에러나도 조용히 넘어감)
     setInterval(() => {
-        log.info('[Updater] 주기적 업데이트 확인 (1시간 경과)...');
-        autoUpdater.checkForUpdates();
+        autoUpdater.checkForUpdates().catch(e => {});
     }, 60 * 60 * 1000);
 }
 
