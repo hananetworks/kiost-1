@@ -50,7 +50,7 @@ function initializePythonServices(mainWindow, pythonExePath) {
         scriptPath: scriptPath,
         args: [app.isPackaged ? 'packaged' : 'dev', process.resourcesPath],
         env: baseEnv, // [수정] 격리된 환경변수 적용
-
+        pythonPath: pythonExePath
 
     };
 
