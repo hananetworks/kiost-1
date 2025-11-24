@@ -2,7 +2,8 @@
 const { app, BrowserWindow, globalShortcut, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const express = require('express');
+const express = require('express')
+const dotenv = require('dotenv');
 
 // [모듈 로드]
 const { log, initializeLogging, startResourceLogging } = require('./logging/logger');
@@ -106,6 +107,28 @@ app.whenReady().then(async () => {
     initializeLogging();
     log.info("=============================================");
     log.info(`[Main] App 시작. Version: ${app.getVersion()}`);
+
+    try {
+        const envPath = app.isPackaged
+            ? path.join(process.resourcesPath, '.env')
+            : path.join(__dirname, '../../.env'); // 프로젝트 구조에 따라 경로 조정 필요
+
+        if (fs.existsSync(envPath)) {
+            const envConfig = dotenv.parse(fs.readFileSync(envPath));
+            if (envConfig.GH_TOKEN) {
+                // electron-updater가 사용할 수 있도록 환경변수에 등록
+                process.env.GH_TOKEN = envConfig.GH_TOKEN;
+                log.info("[Main] .env에서 GH_TOKEN을 로드하여 process.env에 주입했습니다.");
+            } else {
+                log.warn("[Main] .env 파일은 있지만 GH_TOKEN이 없습니다.");
+            }
+        } else {
+            log.warn(`[Main] .env 파일을 찾을 수 없습니다: ${envPath}`);
+        }
+    } catch (e) {
+        log.error(`[Main] 토큰 로드 중 오류: ${e.message}`);
+    }
+
     log.info(`[Main] OS: ${process.platform} ${process.arch}`);
     log.info("=============================================");
 
