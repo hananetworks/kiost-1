@@ -8,7 +8,7 @@ const { log } = require('./logging/logger');
 const dotenv = require('dotenv');
 
 // [설정] 파이썬 배포 태그 (python-env-deploy.yml에서 배포한 버전과 일치해야 함)
-const REQUIRED_ENV_VERSION = 'env-v1.1.4'; // <-- 아까 배포한 최신 버전으로 수정하세요
+const REQUIRED_ENV_VERSION = 'env-v1.1.6'; // <-- 아까 배포한 최신 버전으로 수정하세요
 const REPO_OWNER = 'hananetworks';
 const REPO_NAME = 'kiost-1';
 const MAX_RETRIES = 3; // 최대 재시도 횟수
