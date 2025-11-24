@@ -78,7 +78,7 @@ jobs:
 
           # --- 7. PyWin32 DLL 복사 ---
           $PyWin32Dir = "$EnvName\Lib\site-packages\pywin32_system32"
-          if (Test-Path $PyWin32Dir) {g
+          if (Test-Path $PyWin32Dir) {
               Get-ChildItem -Path $PyWin32Dir -Filter "*.dll" | Copy-Item -Destination $EnvName -Force
           }
 
