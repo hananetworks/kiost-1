@@ -15,30 +15,27 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      # [1단계] 시스템 파이썬 세팅 (컴파일 도우미용)
-      # 임베디드 파이썬에는 없는 'Python.h'를 빌려쓰기 위해 잠깐 사용합니다.
+      # [1단계] 시스템 파이썬 세팅
       - name: Setup System Python (For Compilation)
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
           architecture: 'x64'
 
-      # [2단계] 문제의 라이브러리들을 미리 컴파일 (.whl 파일 생성)
-      # simpleaudio와 eunjeon을 여기서 시스템 파이썬의 힘으로 강제 변환합니다.
+      # [2단계] 휠 빌드 (기존 로직 유지)
       - name: Build Wheels for C-Extensions
         shell: powershell
         run: |
           New-Item -ItemType Directory -Path "wheelhouse" -Force
-          
-          # 시스템 파이썬(python)을 사용해 pip wheel 명령 실행
-          # 만약 여기서도 실패하면, 해당 라이브러리는 Python 3.11을 지원하지 않는 것입니다.
           Write-Host "Building difficult packages..."
-          python -m pip wheel simpleaudio eunjeon --wheel-dir=./wheelhouse
-          
-          # 나머지 requirements.txt에 있는 것들도 호환성 확보를 위해 휠로 미리 받아두면 더 좋습니다.
-          # (시간이 걸린다면 위 두 개만 해도 됩니다)
+          # 빌드 실패 시 멈추지 않고 진행하도록 에러 처리 추가
+          try {
+            python -m pip wheel simpleaudio eunjeon --wheel-dir=./wheelhouse
+          } catch {
+            Write-Warning "Wheel build failed. Will try standard install later."
+          }
 
-      # [3단계] 순정 임베디드 파이썬 구축 (기존 로직)
+      # [3단계] 순정 임베디드 파이썬 구축
       - name: Build Pure Isolated Python
         shell: powershell
         run: |
@@ -57,7 +54,7 @@ jobs:
           $PythonExe = "$EnvName\kiosk_python.exe"
           Rename-Item -Path "$EnvName\python.exe" -NewName "kiosk_python.exe"
 
-          # --- 4. ._pth 파일 수정 (pip 활성화) ---
+          # --- 4. ._pth 파일 수정 ---
           $PthFile = "$EnvName\python311._pth"
           (Get-Content $PthFile) -replace '#import site', 'import site' | Set-Content $PthFile
           
@@ -66,27 +63,43 @@ jobs:
           & $PythonExe get-pip.py --no-warn-script-location
           Remove-Item "get-pip.py" -Force
 
-          # --- 6. 라이브러리 설치 (핵심 변경 사항) ---
-          # 아까 2단계에서 만든 'wheelhouse' 폴더를 우선적으로 참조하게 합니다.
-          Write-Host "Installing from pre-built wheels..."
-          
-          # (A) 컴파일해둔 휠 먼저 설치
-          & $PythonExe -m pip install simpleaudio eunjeon --no-index --find-links=./wheelhouse --no-warn-script-location
-          
-          # (B) 나머지 라이브러리 설치
-          & $PythonExe -m pip install -r requirements.txt --no-warn-script-location --extra-index-url https://download.pytorch.org/whl/cpu
+          # --- 6. 라이브러리 설치 (전략 수정) ---
+          Write-Host "Phase 1: Pre-installing Base Dependencies..."
+          & $PythonExe -m pip install numpy packaging pyyaml regex tqdm requests colorama filelock --no-warn-script-location
+
+          Write-Host "Phase 2: Installing from requirements.txt..."
+          # requirements.txt 설치 (휠이 있으면 휠 우선 사용)
+          try {
+            & $PythonExe -m pip install -r requirements.txt --no-index --find-links=./wheelhouse --no-warn-script-location --extra-index-url https://download.pytorch.org/whl/cpu
+          } catch {
+            # 휠 없으면 그냥 설치 시도
+            & $PythonExe -m pip install -r requirements.txt --no-warn-script-location --extra-index-url https://download.pytorch.org/whl/cpu
+          }
+
+          Write-Host "Phase 3: Forcing Golden Versions..."
+          # [핵심] 충돌 방지를 위해 검증된 버전으로 덮어씌움
+          & $PythonExe -m pip install transformers==4.40.0 tokenizers==0.19.1 huggingface-hub==0.23.0 safetensors==0.4.3 --force-reinstall --no-deps --no-warn-script-location
+
+          Write-Host "Phase 4: Installing MeloTTS..."
+          & $PythonExe -m pip install "git+https://github.com/myshell-ai/MeloTTS.git@209145371cff8fc3bd60d7be902ea69cbdb7965a" --no-deps --force-reinstall --no-warn-script-location
+
+          # [필수 추가] 일본어 사전 데이터 다운로드
+          Write-Host "Phase 5: Downloading UniDic Dictionary..."
+          & $PythonExe -m unidic download
 
           # --- 7. PyWin32 DLL 복사 ---
           $PyWin32Dir = "$EnvName\Lib\site-packages\pywin32_system32"
           if (Test-Path $PyWin32Dir) {
               Get-ChildItem -Path $PyWin32Dir -Filter "*.dll" | Copy-Item -Destination $EnvName -Force
           }
-
+          
+          # --- 8. 정리 ---
+          Get-ChildItem -Path $EnvName -Recurse -Filter "__pycache__" | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 
       - name: Zip python-env folder
         run: 7z a python-env.zip python-env
 
-# [추가] 무결성 검증을 위한 SHA256 해시 파일 생성
+      # [추가] 무결성 검증을 위한 SHA256 해시 파일 생성
       - name: Generate SHA256 Hash
         shell: powershell
         run: |
@@ -94,13 +107,13 @@ jobs:
           $hash | Out-File -Encoding ASCII hash.txt
           Write-Host "Generated Hash: $hash"
 
-# [수정] 업로드할 파일 목록에 hash.txt 추가
+      # [수정] 업로드할 파일 목록에 hash.txt 추가
       - name: Upload to Release
         uses: softprops/action-gh-release@v1
         with:
-         files: |
-           python-env.zip
-           hash.txt
-         prerelease: true
+          files: |
+            python-env.zip
+            hash.txt
+          prerelease: true
         env:
-         GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
