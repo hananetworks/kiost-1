@@ -36,7 +36,6 @@ jobs:
         shell: powershell
         run: |
           # --- 1. 작업 폴더 준비 ---
-          
           $EnvName = "python-env"
           if (Test-Path $EnvName) { Remove-Item $EnvName -Recurse -Force }
           New-Item -ItemType Directory -Path $EnvName -Force
@@ -68,6 +67,10 @@ jobs:
           
           # (B) 나머지 라이브러리 설치
           & $PythonExe -m pip install -r requirements.txt --no-warn-script-location --extra-index-url https://download.pytorch.org/whl/cpu
+
+          # [추가됨] UniDic 사전 데이터 다운로드 (딱 이것만 추가함)
+          Write-Host "Downloading UniDic Dictionary..."
+          & $PythonExe -m unidic download
 
           # --- 7. PyWin32 DLL 복사 ---
           $PyWin32Dir = "$EnvName\Lib\site-packages\pywin32_system32"
