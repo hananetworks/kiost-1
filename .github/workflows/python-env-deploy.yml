@@ -22,18 +22,14 @@ jobs:
           python-version: '3.11'
           architecture: 'x64'
 
-      # [2단계] 휠 빌드 (기존 로직 유지)
+      # [2단계] 휠 빌드
       - name: Build Wheels for C-Extensions
         shell: powershell
         run: |
           New-Item -ItemType Directory -Path "wheelhouse" -Force
+          
           Write-Host "Building difficult packages..."
-          # 빌드 실패 시 멈추지 않고 진행하도록 에러 처리 추가
-          try {
-            python -m pip wheel simpleaudio eunjeon --wheel-dir=./wheelhouse
-          } catch {
-            Write-Warning "Wheel build failed. Will try standard install later."
-          }
+          python -m pip wheel simpleaudio eunjeon --wheel-dir=./wheelhouse
 
       # [3단계] 순정 임베디드 파이썬 구축
       - name: Build Pure Isolated Python
@@ -63,38 +59,20 @@ jobs:
           & $PythonExe get-pip.py --no-warn-script-location
           Remove-Item "get-pip.py" -Force
 
-          # --- 6. 라이브러리 설치 (전략 수정) ---
-          Write-Host "Phase 1: Pre-installing Base Dependencies..."
-          & $PythonExe -m pip install numpy packaging pyyaml regex tqdm requests colorama filelock --no-warn-script-location
-
-          Write-Host "Phase 2: Installing from requirements.txt..."
-          # requirements.txt 설치 (휠이 있으면 휠 우선 사용)
-          try {
-            & $PythonExe -m pip install -r requirements.txt --no-index --find-links=./wheelhouse --no-warn-script-location --extra-index-url https://download.pytorch.org/whl/cpu
-          } catch {
-            # 휠 없으면 그냥 설치 시도
-            & $PythonExe -m pip install -r requirements.txt --no-warn-script-location --extra-index-url https://download.pytorch.org/whl/cpu
-          }
-
-          Write-Host "Phase 3: Forcing Golden Versions..."
-          # [핵심] 충돌 방지를 위해 검증된 버전으로 덮어씌움
-          & $PythonExe -m pip install transformers==4.40.0 tokenizers==0.19.1 huggingface-hub==0.23.0 safetensors==0.4.3 --force-reinstall --no-deps --no-warn-script-location
-
-          Write-Host "Phase 4: Installing MeloTTS..."
-          & $PythonExe -m pip install "git+https://github.com/myshell-ai/MeloTTS.git@209145371cff8fc3bd60d7be902ea69cbdb7965a" --no-deps --force-reinstall --no-warn-script-location
-
-          # [필수 추가] 일본어 사전 데이터 다운로드
-          Write-Host "Phase 5: Downloading UniDic Dictionary..."
-          & $PythonExe -m unidic download
+          # --- 6. 라이브러리 설치 ---
+          Write-Host "Installing from pre-built wheels..."
+          
+          # (A) 컴파일해둔 휠 먼저 설치
+          & $PythonExe -m pip install simpleaudio eunjeon --no-index --find-links=./wheelhouse --no-warn-script-location
+          
+          # (B) 나머지 라이브러리 설치
+          & $PythonExe -m pip install -r requirements.txt --no-warn-script-location --extra-index-url https://download.pytorch.org/whl/cpu
 
           # --- 7. PyWin32 DLL 복사 ---
           $PyWin32Dir = "$EnvName\Lib\site-packages\pywin32_system32"
           if (Test-Path $PyWin32Dir) {
               Get-ChildItem -Path $PyWin32Dir -Filter "*.dll" | Copy-Item -Destination $EnvName -Force
           }
-          
-          # --- 8. 정리 ---
-          Get-ChildItem -Path $EnvName -Recurse -Filter "__pycache__" | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 
       - name: Zip python-env folder
         run: 7z a python-env.zip python-env
