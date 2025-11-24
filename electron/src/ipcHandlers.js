@@ -16,6 +16,8 @@ const { printContent } = require('./services/hardware/printService.js');
 const ttsPipeClient = require('./services/voice/ttsPipeClient'); // 한국어 TTS 클라이언트
 const ttsPipeClientEN = require('./services/voice/ttsPipeClientEN'); // 영어 TTS 클라이언트
 
+const volumeControl = require('./services/hardware/volumeControl');
+
 function registerIpcHandlers(win) {
 
     /**
@@ -57,6 +59,17 @@ function registerIpcHandlers(win) {
             return { success: false, error: '인쇄 중 오류가 발생했습니다.' };
         }
     });
+
+    // [신규] 시스템 볼륨 설정
+    ipcMain.handle('set-system-volume', async (event, volume) => {
+        return await volumeControl.setVolume(volume);
+    });
+
+    // [신규] 현재 시스템 볼륨 가져오기
+    ipcMain.handle('get-system-volume', async () => {
+        return await volumeControl.getVolume();
+    });
+
 
     /**
      * STT 텍스트를 GPT로 교정하는 핸들러

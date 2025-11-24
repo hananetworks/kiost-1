@@ -4,6 +4,23 @@ import { createPortal } from "react-dom"; // ✅ Portal import
 export default function VoiceModal({ onClose, voiceSettings, setVoiceSettings }) {
     const [localSettings, setLocalSettings] = useState(voiceSettings);
 
+    // ✅ [신규] 모달이 열릴 때, PC의 현재 시스템 볼륨을 가져와서 슬라이더에 반영
+    useEffect(() => {
+        const syncSystemVolume = async () => {
+            if (window.electronAPI && window.electronAPI.getSystemVolume) {
+                try {
+                    const currentVol = await window.electronAPI.getSystemVolume();
+                    console.log("Current System Volume:", currentVol);
+                    // 가져온 볼륨값으로 로컬 상태 업데이트
+                    setLocalSettings((prev) => ({ ...prev, volume: currentVol }));
+                } catch (error) {
+                    console.error("볼륨 가져오기 실패:", error);
+                }
+            }
+        };
+        syncSystemVolume();
+    }, []);
+
     // 부모의 voiceSettings prop이 변경될 때 로컬 상태를 동기화합니다.
     useEffect(() => {
         setLocalSettings(voiceSettings);
@@ -13,21 +30,28 @@ export default function VoiceModal({ onClose, voiceSettings, setVoiceSettings })
         const updated = { ...localSettings, [field]: value };
         setLocalSettings(updated);
         setVoiceSettings(updated); // 변경 즉시 부모 상태에도 반영
+
+        // ✅ [신규] 볼륨이 변경되면 PC 시스템 볼륨 조절 요청 (IPC)
+        if (field === 'volume' && window.electronAPI && window.electronAPI.setSystemVolume) {
+            window.electronAPI.setSystemVolume(value);
+        }
     };
 
     const handleStep = (field, step, min, max) => {
-        let newValue = parseFloat((localSettings[field] + step).toFixed(2));
+        // 시스템 볼륨은 정수 단위가 깔끔하므로 소수점 처리 로직을 정수형에 맞게 단순화 가능하지만,
+        // 기존 로직(parseFloat)을 유지해도 문제 없습니다.
+        let newValue = localSettings[field] + step;
         newValue = Math.max(min, Math.min(max, newValue)); // min/max 범위 보장
         handleChange(field, newValue);
     };
 
-    // ✅ 1. 반복되는 UI를 위한 설정 데이터 배열 생성
-    const settingsConfig = [{ field: "volume", label: "볼륨", min: 0, max: 2, step: 0.1 }];
+    // ✅ [수정] 볼륨 범위를 PC 기준인 0 ~ 100으로 변경 (Step은 5단위 추천)
+    const settingsConfig = [{ field: "volume", label: "볼륨", min: 0, max: 100, step: 5 }];
 
-    // ✅ 2. Portal이 렌더링 가능한 상태가 아닐 경우 (SSR 등) 방지
+    // ✅ Portal이 렌더링 가능한 상태가 아닐 경우 (SSR 등) 방지
     if (typeof document === "undefined") return null;
 
-    // ✅ 3. Portal로 body에 직접 렌더링
+    // ✅ Portal로 body에 직접 렌더링
     return createPortal(
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999] p-5">
             <div
@@ -45,9 +69,10 @@ export default function VoiceModal({ onClose, voiceSettings, setVoiceSettings })
 
                 {settingsConfig.map((config) => (
                     <label key={config.field} className="flex flex-col mb-3 sm:mb-4 lg:mb-6">
-            <span className="mb-2 sm:mb-3 sm:text-xl lg:text-3xl xl:text-4xl font-medium notranslate">
-              {config.label} ({localSettings[config.field].toFixed(1)})
-            </span>
+                        {/* ✅ [수정] 소수점 표시(.toFixed(1)) 제거 -> 정수형(.toFixed(0)) 표시 */}
+                        <span className="mb-2 sm:mb-3 sm:text-xl lg:text-3xl xl:text-4xl font-medium notranslate">
+                            {config.label} ({localSettings[config.field].toFixed(0)})
+                        </span>
                         <div className="flex items-center gap-2 sm:gap-3 lg:gap-4">
                             <button
                                 onClick={() => handleStep(config.field, -config.step, config.min, config.max)}

@@ -86,10 +86,21 @@ jobs:
       - name: Zip python-env folder
         run: 7z a python-env.zip python-env
 
+# [추가] 무결성 검증을 위한 SHA256 해시 파일 생성
+      - name: Generate SHA256 Hash
+        shell: powershell
+        run: |
+          $hash = (Get-FileHash python-env.zip -Algorithm SHA256).Hash
+          $hash | Out-File -Encoding ASCII hash.txt
+          Write-Host "Generated Hash: $hash"
+
+# [수정] 업로드할 파일 목록에 hash.txt 추가
       - name: Upload to Release
         uses: softprops/action-gh-release@v1
         with:
-          files: python-env.zip
-          prerelease: true
+         files: |
+           python-env.zip
+           hash.txt
+         prerelease: true
         env:
-          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+         GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}

@@ -118,6 +118,7 @@
     "express": "^5.1.0",
     "form-data": "^4.0.4",
     "jsonwebtoken": "^9.0.2",
+    "loudness": "^0.4.2",
     "lucide-react": "^0.542.0",
     "node-fetch": "^2.7.0",
     "openai": "^6.3.0",

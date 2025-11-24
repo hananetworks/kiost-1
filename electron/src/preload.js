@@ -15,6 +15,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // [기존] (현재는 거의 사용되지 않음)
     correctSTT: (text) => ipcRenderer.invoke('stt:correct', text),
 
+    // 🔽 [신규] 볼륨 제어 API 추가 🔽
+    setSystemVolume: (volume) => ipcRenderer.invoke('set-system-volume', volume),
+    getSystemVolume: () => ipcRenderer.invoke('get-system-volume'),
+
+
     // --- AI 스트리밍 리스너 (수정 없음) ---
     onAIChunk: (callback) => {
         const listener = (_event, chunk) => callback(chunk);
@@ -32,6 +37,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
         return () => ipcRenderer.removeListener('ai:error', listener);
     },
     // --- AI 스트리밍 끝 ---
+
 
     // --- 🔽 [신규] STT 결과를 AI로 넘기는 전용 함수 ---
     /**
