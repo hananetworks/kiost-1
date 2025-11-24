@@ -117,7 +117,7 @@ const { log } = require('../logging/logger');
 const { app } = require('electron');
 const fs = require('fs');
 const path = require('path');
-const dotenv = require('dotenv'); // [추가] 모듈 필요
+const dotenv = require('dotenv');
 
 // [설정] 자동 다운로드 활성화
 autoUpdater.autoDownload = true;
@@ -128,51 +128,67 @@ autoUpdater.allowPrerelease = false;
  * @returns {Promise<boolean>} true: 업데이트 있음(앱 시작 중단), false: 없음(계속 진행)
  */
 function checkForUpdatesBlocking() {
-    log.info("[Updater] 시작 전 업데이트 확인 중... (Blocking Check)");
+    log.info("[Updater] 🔍 시작 전 업데이트 확인 중... (Blocking Check)");
 
-    // [핵심 추가] .env 파일에서 토큰 로드 및 주입 로직 ========================
+    // =======================================================================
+    // [디버깅] 토큰 로드 과정 추적 로그 (이걸로 원인을 잡습니다)
+    // =======================================================================
     try {
-        const envPath = app.isPackaged
-            ? path.join(process.resourcesPath, '.env')
-            : path.join(__dirname, '../../.env'); // 개발 환경 경로 조정 필요 시 수정
+        let envPath;
+        if (app.isPackaged) {
+            // 배포된 앱의 경우: resources 폴더 안의 .env
+            envPath = path.join(process.resourcesPath, '.env');
+            log.info(`[Updater Debug] 배포 모드 감지. .env 경로: ${envPath}`);
+        } else {
+            // 개발 모드
+            envPath = path.join(__dirname, '../../.env');
+            log.info(`[Updater Debug] 개발 모드 감지. .env 경로: ${envPath}`);
+        }
 
         if (fs.existsSync(envPath)) {
-            const envConfig = dotenv.parse(fs.readFileSync(envPath));
+            log.info(`[Updater Debug] ✅ .env 파일을 찾았습니다!`);
+
+            const envContent = fs.readFileSync(envPath, 'utf8'); // 내용 읽기
+            const envConfig = dotenv.parse(envContent);
+
             if (envConfig.GH_TOKEN) {
-                // 1. 환경변수 등록 (electron-updater가 자동 참조)
+                // 토큰 앞 5자리만 로그에 찍어서 확인 (보안상 전체 출력 X)
+                const tokenPreview = envConfig.GH_TOKEN.substring(0, 5) + "...";
+                log.info(`[Updater Debug] 🔑 토큰 로드 성공: ${tokenPreview}`);
+
+                // 1. 환경변수 주입
                 process.env.GH_TOKEN = envConfig.GH_TOKEN;
 
-                // 2. 헤더 강제 주입 (확실한 방법)
-                // GitHub Private Repo는 'Authorization: token 토큰값' 형식을 씁니다.
+                // 2. 헤더 강제 설정 (Private Repo 필수)
                 autoUpdater.requestHeaders = {
                     "Authorization": `token ${envConfig.GH_TOKEN}`
                 };
-                log.info("[Updater] Private Repo 접근 토큰 설정 완료.");
+                log.info("[Updater Debug] 헤더 설정 완료. 이제 업데이트를 확인합니다.");
             } else {
-                log.warn("[Updater] .env 파일은 있지만 GH_TOKEN이 없습니다.");
+                log.error("[Updater Debug] ❌ .env 파일은 있지만 'GH_TOKEN' 값이 없습니다.");
+                log.error(`[Updater Debug] 파일 내용 미리보기: ${envContent.substring(0, 50)}...`);
             }
         } else {
-            log.warn(`[Updater] .env 파일을 찾을 수 없습니다: ${envPath}`);
+            log.error(`[Updater Debug] ❌ .env 파일이 없습니다! 경로를 확인하세요: ${envPath}`);
+            // 파일이 없으면 여기서 리턴하지 않고 일단 진행해봅니다 (결과는 404겠지만)
         }
     } catch (e) {
-        log.error(`[Updater] 토큰 설정 중 오류: ${e.message}`);
+        log.error(`[Updater Debug] 💥 토큰 처리 중 에러 발생: ${e.message}`);
     }
     // =======================================================================
 
     return new Promise((resolve) => {
-        // [안전장치] 5초 타임아웃
         const safetyTimer = setTimeout(() => {
-            log.warn("[Updater] 업데이트 서버 응답 시간 초과. 일단 앱을 시작합니다.");
+            log.warn("[Updater] ⚠️ 서버 응답 시간 초과 (5초). 앱을 시작합니다.");
             resolve(false);
         }, 5000);
 
-        // 1. 업데이트 발견됨 -> 다운로드 및 설치 프로세스 시작
         autoUpdater.once('update-available', (info) => {
             clearTimeout(safetyTimer);
-            log.info(`[Updater] 🚀 새 버전 발견! (${info.version}). 다운로드를 시작하며 앱 구동을 일시 중지합니다.`);
+            log.info(`[Updater] 🚀 새 버전 발견! (${info.version})`);
 
             autoUpdater.once('update-downloaded', (info) => {
-                log.info('[Updater] ✅ 다운로드 완료. 즉시 설치 및 재시작합니다.');
+                log.info('[Updater] ✅ 다운로드 완료. 재시작하여 설치합니다.');
                 autoUpdater.quitAndInstall(true, true);
             });
 
@@ -180,21 +196,18 @@ function checkForUpdatesBlocking() {
                 log.info(`[Updater] 다운로드 속도: ${parseInt(progressObj.bytesPerSecond / 1024)} KB/s (${parseInt(progressObj.percent)}%)`);
             });
 
-            resolve(true); // Main 프로세스 정지 신호
+            resolve(true);
         });
 
-        // 2. 업데이트 없음 -> 앱 시작 계속
         autoUpdater.once('update-not-available', (info) => {
             clearTimeout(safetyTimer);
-            log.info('[Updater] 현재 최신 버전입니다. 앱 구동을 계속합니다.');
+            log.info('[Updater] ✅ 현재 최신 버전입니다.');
             resolve(false);
         });
 
-        // 3. 에러 발생 -> 앱 시작 계속
         autoUpdater.once('error', (err) => {
             clearTimeout(safetyTimer);
-            // 404 에러가 나도 앱은 켜져야 하므로 로그만 남기고 통과
-            log.error(`[Updater] 초기 업데이트 확인 실패: ${err.message}`);
+            log.error(`[Updater] ❌ 업데이트 확인 실패: ${err.message}`);
             resolve(false);
         });
 
@@ -202,24 +215,10 @@ function checkForUpdatesBlocking() {
     });
 }
 
-/**
- * [기존 로직] 주기적 확인용 (앱이 켜진 뒤에 동작)
- */
 function initializeUpdater(mainWindow) {
     log.info("[Updater] 백그라운드 업데이트 모듈 초기화.");
-
-    autoUpdater.removeAllListeners('update-downloaded');
-    autoUpdater.removeAllListeners('download-progress');
-
-    autoUpdater.on('update-downloaded', (info) => {
-        log.info('[Updater] (백그라운드) 다운로드 완료. 3초 후 재시작합니다.');
-        setTimeout(() => {
-            autoUpdater.quitAndInstall(true, true);
-        }, 3000);
-    });
-
+    // (기존 주기적 확인 로직 유지)
     setInterval(() => {
-        log.info('[Updater] 주기적 업데이트 확인 (1시간 경과)...');
         autoUpdater.checkForUpdates();
     }, 60 * 60 * 1000);
 }
