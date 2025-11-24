@@ -49,18 +49,20 @@ function initializePythonServices(mainWindow, pythonExePath) {
         // pythonPath는 아래에서 설정
         scriptPath: scriptPath,
         args: [app.isPackaged ? 'packaged' : 'dev', process.resourcesPath],
-        env: baseEnv // [수정] 격리된 환경변수 적용
+        env: baseEnv, // [수정] 격리된 환경변수 적용
+
+
     };
 
-    // [핵심 변경] pythonPath를 배치 파일 경로로 변경
-    if (app.isPackaged) {
-        // 배포 모드: 배치 파일 사용 (환경변수 등 배포 환경 보정용)
-        shellOptions.pythonPath = path.join(process.resourcesPath, 'main', 'run_kiosk_python.bat');
-    } else {
-        // 개발 모드: 배치 파일을 무시하고, main.js에서 전달받은 경로를 직접 사용
-        log.info(`[Python] 개발 모드: 배치 파일 대신 직접 실행 -> ${pythonExePath}`);
-        shellOptions.pythonPath = pythonExePath;
-    }
+    // // [핵심 변경] pythonPath를 배치 파일 경로로 변경
+    // if (app.isPackaged) {
+    //     // 배포 모드: 배치 파일 사용 (환경변수 등 배포 환경 보정용)
+    //     shellOptions.pythonPath = path.join(process.resourcesPath, 'main', 'run_kiosk_python.bat');
+    // } else {
+    //     // 개발 모드: 배치 파일을 무시하고, main.js에서 전달받은 경로를 직접 사용
+    //     log.info(`[Python] 개발 모드: 배치 파일 대신 직접 실행 -> ${pythonExePath}`);
+    //     shellOptions.pythonPath = pythonExePath;
+    // }
 
     try {
         // PythonShell 실행 (TTS)
