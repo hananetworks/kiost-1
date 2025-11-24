@@ -78,13 +78,10 @@ jobs:
 
           # --- 7. PyWin32 DLL 복사 ---
           $PyWin32Dir = "$EnvName\Lib\site-packages\pywin32_system32"
-          if (Test-Path $PyWin32Dir) {
+          if (Test-Path $PyWin32Dir) {g
               Get-ChildItem -Path $PyWin32Dir -Filter "*.dll" | Copy-Item -Destination $EnvName -Force
           }
 
-          # --- 8. 정리 ---
-          Get-ChildItem -Path $EnvName -Recurse -Filter "__pycache__" | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
-          Get-ChildItem -Path $EnvName -Recurse -Filter "*.dist-info" | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 
       - name: Zip python-env folder
         run: 7z a python-env.zip python-env
