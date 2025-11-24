@@ -15,14 +15,6 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      # [1단계] 시스템 파이썬 세팅 (기본 도구)
-      - name: Setup System Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.11'
-          architecture: 'x64'
-
-      # [2단계] 순정 임베디드 파이썬 구축 (황금 조합 적용)
       - name: Build Pure Isolated Python
         shell: powershell
         run: |
@@ -31,7 +23,7 @@ jobs:
           if (Test-Path $EnvName) { Remove-Item $EnvName -Recurse -Force }
           New-Item -ItemType Directory -Path $EnvName -Force
 
-          # --- 2. 순정 파이썬 다운로드 ---
+          # --- 2. 순정 파이썬 다운로드 (3.11.9 Embeddable) ---
           $Url = "https://www.python.org/ftp/python/3.11.9/python-3.11.9-embed-amd64.zip"
           Invoke-WebRequest -Uri $Url -OutFile "python.zip"
           Expand-Archive -Path "python.zip" -DestinationPath $EnvName -Force
@@ -41,7 +33,7 @@ jobs:
           $PythonExe = "$EnvName\kiosk_python.exe"
           Rename-Item -Path "$EnvName\python.exe" -NewName "kiosk_python.exe"
 
-          # --- 4. ._pth 파일 수정 (pip 활성화) ---
+          # --- 4. ._pth 파일 수정 (pip 활성화 필수) ---
           $PthFile = "$EnvName\python311._pth"
           (Get-Content $PthFile) -replace '#import site', 'import site' | Set-Content $PthFile
           
@@ -50,27 +42,22 @@ jobs:
           & $PythonExe get-pip.py --no-warn-script-location
           Remove-Item "get-pip.py" -Force
 
-          # --- 6. 라이브러리 설치 (핵심 변경 사항: 황금 조합 적용) ---
-          Write-Host "Installing Golden Combination Dependencies..."
-          
-          # [중요 1] 로컬에서 검증된 안정 버전 설치 (Metadata 에러 방지)
-          # requirements.txt 대신 직접 지정하여 설치합니다.
-          & $PythonExe -m pip install transformers==4.40.0 tokenizers==0.19.1 huggingface-hub==0.23.0 safetensors==0.4.3 filelock requests pywin32 google-cloud-speech nltk pygame gTTS --no-deps --no-warn-script-location
+          # --- 6. 라이브러리 설치 (수정됨: 2단계 설치 전략) ---
+          Write-Host "Phase 1: Installing Base Dependencies..."
+          # [Pre-install] 충돌 방지를 위해 기초 패키지 선설치
+          & $PythonExe -m pip install numpy packaging pyyaml regex tqdm requests colorama filelock --no-warn-script-location
 
-          # [중요 2] AI 엔진(Torch) CPU 버전 설치
-          Write-Host "Installing PyTorch (CPU)..."
-          & $PythonExe -m pip install torch==2.5.1+cpu torchaudio==2.5.1+cpu --index-url https://download.pytorch.org/whl/cpu --no-warn-script-location
+          Write-Host "Phase 2: Installing Requirements..."
+          # [Main-install] 나머지 전체 설치
+          & $PythonExe -m pip install -r requirements.txt --no-warn-script-location --extra-index-url https://download.pytorch.org/whl/cpu
 
-          # --- 7. PyWin32 DLL 복사 (오타 수정됨) ---
+          # --- 7. PyWin32 DLL 복사 ---
           $PyWin32Dir = "$EnvName\Lib\site-packages\pywin32_system32"
-          
-          # 아까 {g 오타가 있던 곳 수정 완료
           if (Test-Path $PyWin32Dir) {
               Get-ChildItem -Path $PyWin32Dir -Filter "*.dll" | Copy-Item -Destination $EnvName -Force
           }
 
-          # --- 8. 정리 (주의: *.dist-info는 절대 지우지 않음!) ---
-          # __pycache__만 지워서 용량을 줄이고, 메타데이터 폴더는 남겨둡니다.
+          # --- 8. 정리 (__pycache__만 삭제) ---
           Get-ChildItem -Path $EnvName -Recurse -Filter "__pycache__" | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 
       - name: Zip python-env folder
@@ -80,6 +67,6 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: python-env.zip
-          prerelease: true  # 사용자가 원한대로 프리릴리즈 유지
+          prerelease: true
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
