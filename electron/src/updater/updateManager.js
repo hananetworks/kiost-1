@@ -111,8 +111,13 @@
 //     initializeUpdater,
 //     setInactivityStatus // ◀ IPC 핸들러에서 이 함수를 호출할 수 있도록 export
 // }; => 유후 상태에서 업데이트.
+
 const { autoUpdater } = require('electron-updater');
 const { log } = require('../logging/logger');
+const { app } = require('electron');
+const fs = require('fs');
+const path = require('path');
+const dotenv = require('dotenv'); // [추가] 모듈 필요
 
 // [설정] 자동 다운로드 활성화
 autoUpdater.autoDownload = true;
@@ -125,12 +130,37 @@ autoUpdater.allowPrerelease = false;
 function checkForUpdatesBlocking() {
     log.info("[Updater] 시작 전 업데이트 확인 중... (Blocking Check)");
 
-    if (process.env.GH_TOKEN) {
-        autoUpdater.requestHeaders = { "PRIVATE-TOKEN": process.env.GH_TOKEN };
+    // [핵심 추가] .env 파일에서 토큰 로드 및 주입 로직 ========================
+    try {
+        const envPath = app.isPackaged
+            ? path.join(process.resourcesPath, '.env')
+            : path.join(__dirname, '../../.env'); // 개발 환경 경로 조정 필요 시 수정
+
+        if (fs.existsSync(envPath)) {
+            const envConfig = dotenv.parse(fs.readFileSync(envPath));
+            if (envConfig.GH_TOKEN) {
+                // 1. 환경변수 등록 (electron-updater가 자동 참조)
+                process.env.GH_TOKEN = envConfig.GH_TOKEN;
+
+                // 2. 헤더 강제 주입 (확실한 방법)
+                // GitHub Private Repo는 'Authorization: token 토큰값' 형식을 씁니다.
+                autoUpdater.requestHeaders = {
+                    "Authorization": `token ${envConfig.GH_TOKEN}`
+                };
+                log.info("[Updater] Private Repo 접근 토큰 설정 완료.");
+            } else {
+                log.warn("[Updater] .env 파일은 있지만 GH_TOKEN이 없습니다.");
+            }
+        } else {
+            log.warn(`[Updater] .env 파일을 찾을 수 없습니다: ${envPath}`);
+        }
+    } catch (e) {
+        log.error(`[Updater] 토큰 설정 중 오류: ${e.message}`);
     }
+    // =======================================================================
 
     return new Promise((resolve) => {
-        // [안전장치] 5초 타임아웃 (변수에 담아서 취소 가능하게 함)
+        // [안전장치] 5초 타임아웃
         const safetyTimer = setTimeout(() => {
             log.warn("[Updater] 업데이트 서버 응답 시간 초과. 일단 앱을 시작합니다.");
             resolve(false);
@@ -138,34 +168,32 @@ function checkForUpdatesBlocking() {
 
         // 1. 업데이트 발견됨 -> 다운로드 및 설치 프로세스 시작
         autoUpdater.once('update-available', (info) => {
-            clearTimeout(safetyTimer); // 타임아웃 해제 (중요!)
+            clearTimeout(safetyTimer);
             log.info(`[Updater] 🚀 새 버전 발견! (${info.version}). 다운로드를 시작하며 앱 구동을 일시 중지합니다.`);
 
-            // [핵심 수정] 여기서 다운로드 완료 리스너를 직접 등록해야 함!
-            // main.js가 return 되어도 여기서 설치까지 책임짐
             autoUpdater.once('update-downloaded', (info) => {
                 log.info('[Updater] ✅ 다운로드 완료. 즉시 설치 및 재시작합니다.');
                 autoUpdater.quitAndInstall(true, true);
             });
 
-            // 진행률 로깅
             autoUpdater.on('download-progress', (progressObj) => {
                 log.info(`[Updater] 다운로드 속도: ${parseInt(progressObj.bytesPerSecond / 1024)} KB/s (${parseInt(progressObj.percent)}%)`);
             });
 
-            resolve(true); // Main 프로세스 정지 신호 보냄
+            resolve(true); // Main 프로세스 정지 신호
         });
 
         // 2. 업데이트 없음 -> 앱 시작 계속
         autoUpdater.once('update-not-available', (info) => {
-            clearTimeout(safetyTimer); // 타임아웃 해제
+            clearTimeout(safetyTimer);
             log.info('[Updater] 현재 최신 버전입니다. 앱 구동을 계속합니다.');
             resolve(false);
         });
 
         // 3. 에러 발생 -> 앱 시작 계속
         autoUpdater.once('error', (err) => {
-            clearTimeout(safetyTimer); // 타임아웃 해제
+            clearTimeout(safetyTimer);
+            // 404 에러가 나도 앱은 켜져야 하므로 로그만 남기고 통과
             log.error(`[Updater] 초기 업데이트 확인 실패: ${err.message}`);
             resolve(false);
         });
@@ -180,11 +208,9 @@ function checkForUpdatesBlocking() {
 function initializeUpdater(mainWindow) {
     log.info("[Updater] 백그라운드 업데이트 모듈 초기화.");
 
-    // 중복 리스너 방지
     autoUpdater.removeAllListeners('update-downloaded');
     autoUpdater.removeAllListeners('download-progress');
 
-    // 주기적 확인 중 다운로드 완료되면 설치
     autoUpdater.on('update-downloaded', (info) => {
         log.info('[Updater] (백그라운드) 다운로드 완료. 3초 후 재시작합니다.');
         setTimeout(() => {
@@ -192,7 +218,6 @@ function initializeUpdater(mainWindow) {
         }, 3000);
     });
 
-    // 1시간마다 확인
     setInterval(() => {
         log.info('[Updater] 주기적 업데이트 확인 (1시간 경과)...');
         autoUpdater.checkForUpdates();
