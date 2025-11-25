@@ -95,7 +95,7 @@ def pick_speaker_id(tts):
         if any(tag in str(k).upper() for tag in ("KR", "KO")): return int(v)
     return int(next(iter(spk2id.values()), 0))
 
-def split_chunks(text: str, first_len=60, rest_len=150):
+def split_chunks(text: str, first_len=60, rest_len=300):
     chunks = []
     cur_text = text.strip()
 
