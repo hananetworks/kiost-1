@@ -95,21 +95,66 @@ def pick_speaker_id(tts):
         if any(tag in str(k).upper() for tag in ("KR", "KO")): return int(v)
     return int(next(iter(spk2id.values()), 0))
 
-def split_chunks(text: str, first_len=60, rest_len=250):
-    text = text.strip()
-    if not text: return []
-    if len(text) <= first_len: return [text]
-    chunks = [text[:first_len]]
-    remain = text[first_len:]
-    parts = [p for p in re.split(r'([.?!。？！,;、，])', remain) if p]
-    buf, out = "", []
-    for p in parts:
-        buf += p
-        if re.search(r'[.?!。？！,;、，]$', p) or len(buf) >= rest_len:
-            out.append(buf.strip())
-            buf = ""
-    if buf.strip(): out.append(buf.strip())
-    return [c for c in chunks + out if c]
+def split_chunks(text: str, first_len=60, rest_len=300):
+    chunks = []
+    cur_text = text.strip()
+
+    # 1. 처음 목표 길이는 짧게(60자) 잡아서 반응 속도 확보
+    target_len = first_len
+
+    while cur_text:
+        # 남은 텍스트가 목표 길이보다 짧으면 통째로 넣고 끝냄
+        if len(cur_text) <= target_len:
+            if cur_text:
+                chunks.append(cur_text)
+            break
+
+        # 목표 길이만큼 후보군을 가져옴
+        candidate = cur_text[:target_len]
+
+        # [핵심] 최소 길이 안전장치 (목표 길이의 40% 이상은 말하고 끊기)
+        # 예: 300자 설정이면 적어도 120자는 말한 뒤에 나오는 쉼표에서 끊음
+        min_threshold = int(target_len * 0.4)
+        split_idx = -1
+
+        # --- 스마트 자르기 로직 (모든 구간에 적용) ---
+
+        # (1순위) 문장 종결 부호 (. ? ! \n)
+        match = re.search(r'[.?!。？！\n](?=[^.?!。？！\n]*$)', candidate)
+        if match and match.end() > min_threshold:
+            split_idx = match.end()
+
+        # (2순위) 중간 부호 (, ; 등) - 종결 부호가 없으면 여기서 자름
+        if split_idx == -1:
+            match = re.search(r'[,;、，](?=[^,;、，]*$)', candidate)
+            if match and match.end() > min_threshold:
+                split_idx = match.end()
+
+        # (3순위) 공백 (어절 단위) - 부호가 아예 없으면 공백에서라도 자름
+        if split_idx == -1:
+            last_space = candidate.rfind(' ')
+            if last_space > min_threshold:
+                split_idx = last_space
+
+        # (4순위) 아무것도 못 찾으면 강제로 자름 (매우 드문 케이스)
+        if split_idx == -1:
+            split_idx = target_len
+
+        # --- 스마트 자르기 로직 끝 ---
+
+        # 잘린 조각 저장
+        chunk = cur_text[:split_idx].strip()
+        if chunk:
+            chunks.append(chunk)
+
+        # 남은 텍스트 업데이트 (처리한 앞부분 날리기)
+        cur_text = cur_text[split_idx:].strip()
+
+        # ★ 핵심: 첫 턴(60자)이 끝나면 그 다음부터는 목표 길이를 300(rest_len)으로 늘림
+        # 이렇게 해야 뒷부분은 길게 길게 생성해서 끊김(버퍼링)을 방지함
+        target_len = rest_len
+
+    return chunks
 
 def read_wav_as_float(path: str):
     sr, data = sci_wav.read(path)

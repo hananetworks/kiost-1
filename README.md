@@ -1,18 +1,10 @@
-# Electron Template
-
-기본 Electron 템플릿입니다. 각 프로젝트마다 복사해서 사용하세요.# hana-kiosk-project
-# hana-kiosk-project
-
-
-# 1. 파이썬 가상환경 생성 (venv 폴더가 생성됩니다)
-python -m venv venv
-
-# 2. 가상환경 활성화
-# (Windows - CMD/PowerShell)
-.\venv\Scripts\activate
-
-# (Mac/Linux - zsh/bash)
-source venv/bin/activate
-
-# 3. 파이썬 라이브러리 설치
-pip install -r requirements.txt
+# 준비해야할 기능
+1. 키패드 이동 시 음성안내
+2. cms 원격 기능 
+- pc 재부팅, 키오스크 재부팅 , 종료
+- pc 상태확인
+- 버전확인
+3. 음성 정지, 다시 듣기 기능
+4. PC 오면 tts 오면 기능 및 테스트
+5. 
+5. 

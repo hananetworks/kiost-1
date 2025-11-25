@@ -128,39 +128,30 @@ const MAX_RETRIES = 3;
 
 /**
  * [신규] 앱 시작 최우선 순위: 업데이트 확인 (재시도 로직 포함)
- * @returns {Promise<boolean>} true: 업데이트 있음(앱 시작 중단), false: 없음(계속 진행)
  */
 async function checkForUpdatesBlocking() {
     log.info("[Updater] 🔍 시작 전 업데이트 확인 중... (Blocking Check + Retry)");
 
-    // 1. 인증 설정 (Private Repo 토큰 설정) - 기존에 잘 되던 코드 유지
+    // 1. 인증 설정
     setupAuth();
 
-    // 2. 재시도 루프 (최대 3회)
+    // 2. 재시도 루프
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
         try {
             log.info(`[Updater] 업데이트 시도 ${attempt}/${MAX_RETRIES}...`);
 
-            // 업데이트 체크 실행 (Promise)
             const result = await runUpdateCheck();
 
-            // 결과 처리
-            if (result === 'UPDATE_FOUND') {
-                return true; // 업데이트 설치 중이므로 앱 시작 중단
-            }
-            if (result === 'NO_UPDATE') {
-                return false; // 업데이트 없음 -> 앱 시작 계속
-            }
+            if (result === 'UPDATE_FOUND') return true; // 설치 중 -> 앱 시작 중단
+            if (result === 'NO_UPDATE') return false; // 없음 -> 앱 시작
 
         } catch (err) {
             log.warn(`[Updater] ${attempt}회차 실패: ${err.message}`);
 
-            // 마지막 시도가 아니면 2초 대기 후 재시도
             if (attempt < MAX_RETRIES) {
                 log.info("[Updater] 2초 후 재시도합니다...");
                 await new Promise(r => setTimeout(r, 2000));
             } else {
-                // 3번 다 실패하면 포기하고 앱 시작 (이게 롤백 효과)
                 log.error("[Updater] ❌ 업데이트 실패 (최대 재시도 초과). 현재 버전으로 앱을 시작합니다.");
                 return false;
             }
@@ -170,7 +161,7 @@ async function checkForUpdatesBlocking() {
 }
 
 /**
- * [내부 함수] 인증 설정 (사용자님의 기존 잘 되던 코드)
+ * [내부 함수] 인증 설정
  */
 function setupAuth() {
     try {
@@ -182,8 +173,6 @@ function setupAuth() {
             const envConfig = dotenv.parse(fs.readFileSync(envPath));
             if (envConfig.GH_TOKEN) {
                 process.env.GH_TOKEN = envConfig.GH_TOKEN;
-
-                // [핵심] Private Repo 설정 (setFeedURL)
                 autoUpdater.setFeedURL({
                     provider: 'github',
                     owner: 'hananetworks',
@@ -191,17 +180,9 @@ function setupAuth() {
                     private: true,
                     token: envConfig.GH_TOKEN
                 });
-
-                // [핵심] 헤더 강제 주입
-                autoUpdater.requestHeaders = {
-                    "Authorization": `token ${envConfig.GH_TOKEN}`
-                };
+                autoUpdater.requestHeaders = { "Authorization": `token ${envConfig.GH_TOKEN}` };
                 log.info("[Updater] Private Repo 인증(setFeedURL) 설정 완료.");
-            } else {
-                log.warn("[Updater] .env 파일은 있지만 GH_TOKEN이 없습니다.");
             }
-        } else {
-            log.warn(`[Updater] .env 파일을 찾을 수 없습니다: ${envPath}`);
         }
     } catch (e) {
         log.error(`[Updater] 인증 설정 중 오류: ${e.message}`);
@@ -209,19 +190,19 @@ function setupAuth() {
 }
 
 /**
- * [내부 함수] 실제 업데이트 체크 및 이벤트 핸들링
- * @returns {Promise<string>} 'UPDATE_FOUND', 'NO_UPDATE'
+ * [핵심 수정] 실제 업데이트 체크 및 이벤트 핸들링
  */
 function runUpdateCheck() {
     return new Promise((resolve, reject) => {
-        // 10초 타임아웃 (무한 대기 방지)
-        const timer = setTimeout(() => {
-            reject(new Error("Timeout (10s)"));
-        }, 10000);
+        // 1. 타임아웃 설정 (15초로 넉넉하게)
+        // 주의: 이 시간은 "업데이트가 있는지 확인하는 시간"입니다. 다운로드 시간 아님.
+        let timer = setTimeout(() => {
+            cleanup();
+            reject(new Error("Check Timeout (15s)"));
+        }, 15000);
 
-        // 리스너 정리 함수
-        const cleanUp = () => {
-            clearTimeout(timer);
+        const cleanup = () => {
+            if (timer) clearTimeout(timer);
             autoUpdater.removeAllListeners('update-available');
             autoUpdater.removeAllListeners('update-not-available');
             autoUpdater.removeAllListeners('update-downloaded');
@@ -229,56 +210,49 @@ function runUpdateCheck() {
             autoUpdater.removeAllListeners('download-progress');
         };
 
-        // 1. 업데이트 발견 -> 다운로드 시작
+        // 2. 업데이트 발견됨 -> [중요] 타임아웃 해제!
         autoUpdater.once('update-available', (info) => {
-            log.info(`[Updater] 🚀 새 버전 발견! (${info.version}). 다운로드를 시작합니다.`);
-            // 여기서 resolve 하지 않고 download-progress/downloaded를 기다림
+            // ★ 여기서 타이머를 꺼야 다운로드 중에 타임아웃 에러가 안 납니다!
+            if (timer) clearTimeout(timer);
+            timer = null;
+
+            log.info(`[Updater] 🚀 새 버전 발견! (${info.version}). 다운로드 진행 중...`);
         });
 
-        // 2. 다운로드 진행률
+        // 3. 다운로드 진행률 (로그 너무 많이 찍히면 줄이세요)
         autoUpdater.on('download-progress', (progressObj) => {
-            log.info(`[Updater] 다운로드: ${parseInt(progressObj.percent)}% (${parseInt(progressObj.bytesPerSecond / 1024)} KB/s)`);
+            log.info(`[Updater] 다운로드: ${parseInt(progressObj.percent)}%`);
         });
 
-        // 3. 다운로드 완료 -> 설치 및 재시작
+        // 4. 다운로드 완료 -> 설치
         autoUpdater.once('update-downloaded', (info) => {
-            cleanUp();
-            log.info('[Updater] ✅ 다운로드 및 검증 완료. 설치를 위해 재시작합니다.');
-
-            // 즉시 설치 및 재시작
+            cleanup();
+            log.info('[Updater] ✅ 다운로드 및 검증 완료. 재시작합니다.');
             autoUpdater.quitAndInstall(true, true);
-
             resolve('UPDATE_FOUND');
         });
 
-        // 4. 업데이트 없음
+        // 5. 업데이트 없음 -> 종료
         autoUpdater.once('update-not-available', (info) => {
-            cleanUp();
+            cleanup();
             log.info('[Updater] 현재 최신 버전입니다.');
             resolve('NO_UPDATE');
         });
 
-        // 5. 에러 발생 (여기서 reject하면 위쪽 루프에서 잡아서 재시도함)
+        // 6. 에러 발생
         autoUpdater.once('error', (err) => {
-            cleanUp();
-            log.error(`[Updater] 체크 중 에러: ${err.message}`);
-            reject(err);
+            cleanup();
+            reject(err); // 위쪽 루프에서 잡아서 재시도
         });
 
-        // 업데이트 체크 시작
+        // 체크 시작
         autoUpdater.checkForUpdates();
     });
 }
 
-/**
- * [기존 로직] 주기적 확인용 (앱이 켜진 뒤에 동작)
- */
 function initializeUpdater(mainWindow) {
     log.info("[Updater] 백그라운드 업데이트 모듈 초기화.");
-    // 주기적 확인 (에러나도 조용히 넘어감)
-    setInterval(() => {
-        autoUpdater.checkForUpdates().catch(e => {});
-    }, 60 * 60 * 1000);
+    setInterval(() => { autoUpdater.checkForUpdates().catch(e => {}); }, 60 * 60 * 1000);
 }
 
 function setInactivityStatus(status) {}

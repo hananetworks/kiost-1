@@ -246,7 +246,7 @@ function AppContent() {
                         }
                     />
                     <Route
-                        path="kkiosk/history/:id"
+                        path="kiosk/history/:id"
                         element={
                             <HistoryPage
                                 setContrastLevel={setContrastLevel}

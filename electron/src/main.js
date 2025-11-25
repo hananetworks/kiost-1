@@ -244,8 +244,40 @@ app.on("will-quit", () => {
     log.info("[Main] 앱 종료 완료.");
 });
 
-// 예외 처리
+// [수정] 예외 처리 및 자동 재시작 로직
 process.on('uncaughtException', (error) => {
-    log.error(`[Watchdog FATAL] 처리되지 않은 예외: ${error.message}\n${error.stack}`);
-    dialog.showErrorBox("예상치 못한 오류", `오류가 발생했습니다: ${error.message}`);
+    // 1. 로그 기록
+    log.error(`[Watchdog FATAL] 처리되지 않은 예외 발생: ${error.message}`);
+    log.error(error.stack);
+
+    // 2. 가동 시간 체크 (초 단위)
+    const runTime = process.uptime();
+    const MIN_UPTIME = 10; // 최소 10초는 버텼어야 재시작 허용
+
+    if (runTime < MIN_UPTIME) {
+        // 10초도 안 돼서 죽었다면, 재시작해도 또 죽을 확률이 99%임 -> 그냥 종료
+        log.error(`[Watchdog] 앱 실행 후 ${Math.floor(runTime)}초 만에 충돌했습니다. 무한 재부팅 방지를 위해 재시작하지 않고 종료합니다.`);
+
+        // 개발 모드일 때만 메시지 박스 (배포 시엔 조용히 꺼짐)
+        if (!app.isPackaged) {
+            dialog.showErrorBox("치명적 오류 (재시작 중단)",
+                `앱이 너무 빨리 충돌했습니다 (${Math.floor(runTime)}초).\n무한 루프 방지를 위해 자동 재시작을 하지 않습니다.\n\n에러: ${error.message}`);
+        }
+
+        app.exit(1); // 에러 코드로 완전 종료
+        return;
+    }
+
+    // 3. 10초 이상 잘 돌다가 죽은 경우 -> 일시적 오류로 판단하고 재시작
+    log.info("[Watchdog] 시스템 안정성을 위해 1초 후 앱을 재시작합니다.");
+
+    if (!app.isPackaged) {
+        // 개발 중에는 에러 확인하라고 메시지 박스 띄움
+        dialog.showErrorBox("오류 발생", `예기치 않은 오류가 발생했습니다.\n(배포 시 자동 재시작됨)\n\n${error.message}`);
+    }
+
+    setTimeout(() => {
+        app.relaunch(); // 앱 재시작
+        app.exit(0);    // 현재 프로세스 종료
+    }, 1000);
 });

@@ -35,7 +35,6 @@ try:
             nltk.data.path.append(NLTK_DATA_PATH)
             print(f"[INIT] NLTK Data Path added: {NLTK_DATA_PATH}", flush=True)
     else:
-        # ⬇️⬇️⬇️ 이 'else' 블록이 누락되었습니다! ⬇️⬇️⬇️
         print("[INIT] Debug Mode: Checking/Downloading NLTK data ('punkt')...", flush=True)
         nltk.download('punkt', quiet=True)
         print("[INIT] NLTK 'punkt' data is ready.", flush=True)
@@ -100,21 +99,68 @@ def pick_speaker_id(tts):
         if "EN-US" in str(k).upper(): return int(v)
     return int(next(iter(spk2id.values()), 0))
 
-def split_chunks(text: str, first_len=60, rest_len=250):
-    text = text.strip()
-    if not text: return []
-    if len(text) <= first_len: return [text]
-    chunks = [text[:first_len]]
-    remain = text[first_len:]
-    parts = [p for p in re.split(r'([.?!,;])', remain) if p]
-    buf, out = "", []
-    for p in parts:
-        buf += p
-        if re.search(r'[.?!,;]$', p) or len(buf) >= rest_len:
-            out.append(buf.strip())
-            buf = ""
-    if buf.strip(): out.append(buf.strip())
-    return [c for c in chunks + out if c]
+import re
+
+def split_chunks(text: str, first_len=60, rest_len=300):
+    chunks = []
+    cur_text = text.strip()
+
+    # 1. 초기 반응 속도를 위해 첫 청크는 짧게 설정
+    target_len = first_len
+
+    while cur_text:
+        # 남은 텍스트가 목표 길이보다 짧으면 그대로 반환
+        if len(cur_text) <= target_len:
+            if cur_text:
+                chunks.append(cur_text)
+            break
+
+        candidate = cur_text[:target_len]
+
+        # [핵심] 최소 길이 안전장치 (목표 길이의 40% 이상 진행 후 자르기)
+        # 영어는 단어 길이가 다양하므로 이 안전장치가 더 중요합니다.
+        min_threshold = int(target_len * 0.4)
+        split_idx = -1
+
+        # --- 스마트 자르기 로직 (영어 전용) ---
+
+        # (1순위) 문장 종결 부호 (. ? ! 개행)
+        # 영어는 : (콜론)도 문장의 큰 휴지부로 쓰일 때가 많아 포함하면 좋습니다.
+        # 단, Mr. Dr. 등을 피하기 위해 뒤에 공백이나 끝이 오는 경우를 선호하게 하면 좋지만,
+        # 일단 40% 룰이 막아주므로 단순화하여 처리합니다.
+        match = re.search(r'[.?!:\n](?=[^.?!:\n]*$)', candidate)
+        if match and match.end() > min_threshold:
+            split_idx = match.end()
+
+        # (2순위) 중간 부호 (, ;)
+        if split_idx == -1:
+            match = re.search(r'[,;](?=[^,;]*$)', candidate)
+            if match and match.end() > min_threshold:
+                split_idx = match.end()
+
+        # (3순위) 공백 (단어 단위) - 영어는 띄어쓰기가 명확해서 이게 아주 잘 먹힙니다.
+        if split_idx == -1:
+            last_space = candidate.rfind(' ')
+            if last_space > min_threshold:
+                split_idx = last_space
+
+        # (4순위) 강제 절단
+        if split_idx == -1:
+            split_idx = target_len
+
+        # --- 로직 끝 ---
+
+        # 조각 저장
+        chunk = cur_text[:split_idx].strip()
+        if chunk:
+            chunks.append(chunk)
+
+        cur_text = cur_text[split_idx:].strip()
+
+        # 첫 턴 이후에는 긴 버퍼(300자)로 전환
+        target_len = rest_len
+
+    return chunks
 
 def read_wav_as_float(path: str):
     sr, data = sci_wav.read(path)
