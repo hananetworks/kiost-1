@@ -101,7 +101,7 @@ def pick_speaker_id(tts):
 
 import re
 
-def split_chunks(text: str, first_len=60, rest_len=300):
+def split_chunks(text: str, first_len=60, rest_len=150):
     chunks = []
     cur_text = text.strip()
 
