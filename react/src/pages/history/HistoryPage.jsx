@@ -117,40 +117,39 @@ export default function HistoryPage({
 
     // --- ✅ 기존 음성 안내 useEffect (TTS 기능 유지, 언어 조건 추가) ---
     useEffect(() => {
-        if (typeof setIsSpeaking !== 'function') {
-            console.warn("HistoryPage: setIsSpeaking prop이 전달되지 않았습니다.");
-            return;
-        }
+        if (typeof setIsSpeaking !== 'function') { return; }
 
-        // 한국어 또는 영어일 때만 설명 텍스트 가져옴
         let fullText = "";
         if (currentLang === 'ko' || currentLang === 'en') {
             fullText = currentLang === 'en' && current.desc_en ? current.desc_en : current.desc_ko;
         } else {
-            if (setIsSpeaking) setIsSpeaking(false); // TTS 안 할 거면 즉시 false
+            if (setIsSpeaking) setIsSpeaking(false);
         }
 
         const speechTimer = setTimeout(() => {
-            if (fullText) { // 읽을 텍스트가 있을 때만 (ko, en)
-                console.log("HistoryPage: 안내 음성(설명) 재생");
+            if (fullText) {
+                console.log("안내 음성 재생");
                 setIsSpeaking(true);
-                speakText(fullText);
-            }
-        }, 1500);
 
-        // Cleanup: TTS 중지 (기존 유지)
+                // ★ [핵심 수정] TTS용 텍스트 정제 (줄바꿈제거 + 마침표 보장)
+                // 1. \n이나 \\n을 공백으로 바꿔서 문장이 끊기지 않게 연결
+                // 2. 끝에 마침표가 없으면 추가 (버퍼링 강제 해제용)
+                let ttsText = fullText.replace(/\\n/g, " ").replace(/\n/g, " ").trim();
+                if (!/[.?!]$/.test(ttsText)) {
+                    ttsText += ".";
+                }
+
+                speakText(ttsText);
+            }
+        }, 1500); // (NaturePage는 2000, HistoryPage는 1500 기존 유지)
+
         return () => {
             clearTimeout(speechTimer);
-            // TTS 지원 언어 외에는 중지 명령 보낼 필요 없음 (선택 사항)
-            // if (currentLang === 'ko' || currentLang === 'en') {
-            console.log("HistoryPage: Cleanup, TTS 중지 (ALL /stop)");
+            // "Stop" 텍스트 읽음 방지를 위해 확실하게 stop 명령 전송
             window.electronAPI.sendTtsCommand('ALL', { command: "stop" });
-            // }
-            if (setIsSpeaking) setIsSpeaking(false); // 컴포넌트 떠날 때 확실히 false
+            if (setIsSpeaking) setIsSpeaking(false);
         };
-
-        // isSpeaking 상태 변경 시에는 재실행 안 함
-    }, [page, currentLang, setIsSpeaking]); // ✅ isEnglish 대신 currentLang 사용
+    }, [page, currentLang, setIsSpeaking]);
 
     // --- 🔽 [추가] 다국어 제목/설명/폰트 함수
     const getDescriptionByLang = (item) => {

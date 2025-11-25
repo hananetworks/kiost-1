@@ -266,48 +266,105 @@ def play_worker(play_q, stop_evt, interrupt_evt, signal_q):
     print("[PLAY] Worker stopped.", flush=True)
 
 def run_pipe_loop(in_q, stop_evt, interrupt_evt, signal_q):
-    """Windows Named Pipe를 통해 main.js와 통신하는 메인 루프"""
-    print("[PIPE] Worker started.", flush=True)
+    """Windows Named Pipe 통신 (조각난 텍스트 버퍼링 기능 추가)"""
+    print("[PIPE] Worker started with Smart Buffering.", flush=True)
+
+    # 문장 종결 패턴 (마침표, 물음표, 느낌표, 개행)
+    re_end = re.compile(r'[.?!。？！\n]')
+    # 쉼표 패턴 (보조 절단용)
+    re_comma = re.compile(r'[,;、，]')
+
+    text_buffer = ""
+
     while not stop_evt.is_set():
         handle = None
         try:
             handle = win32pipe.CreateNamedPipe(PIPE_NAME, win32con.PIPE_ACCESS_DUPLEX,
                                                win32pipe.PIPE_TYPE_MESSAGE | win32pipe.PIPE_READMODE_MESSAGE | win32pipe.PIPE_WAIT,
                                                1, 65536, 65536, 0, None)
-            print(f"[PIPE] Pipe created. Waiting for client on {PIPE_NAME}...", flush=True)
+            print(f"[PIPE] Ready on {PIPE_NAME}", flush=True)
             win32pipe.ConnectNamedPipe(handle, None)
             print("[PIPE] Client Connected", flush=True)
+
             buf = b""
             while not stop_evt.is_set():
-                try: # 신호 전송
-                    signal = signal_q.get_nowait()
-                    win32file.WriteFile(handle, signal)
-                except queue.Empty: pass
+                try:
+                    try:
+                        signal = signal_q.get_nowait()
+                        win32file.WriteFile(handle, signal)
+                    except queue.Empty: pass
                 except pywintypes.error: break
-                try: # 데이터 수신
+
+                try:
                     _, data = win32file.ReadFile(handle, 4096)
                     buf += data
+
                     while b"\n" in buf:
                         line, buf = buf.split(b"\n", 1)
                         line = line.decode("utf-8", errors="ignore").strip()
                         if not line: continue
+
                         try:
                             obj = json.loads(line)
                             command = obj.get("command", "")
                             text = obj.get("text", "")
+
+                            # 1. 명시적 Stop 명령 처리
                             if command == "stop":
                                 while not in_q.empty(): in_q.get_nowait()
                                 interrupt_evt.set()
+                                text_buffer = ""
+
                             elif command == "quit":
                                 stop_evt.set()
                                 break
+
+                            elif command == "flush":
+                                if text_buffer:
+                                    in_q.put(text_buffer)
+                                    text_buffer = ""
+
                             elif text:
                                 if interrupt_evt.is_set(): interrupt_evt.clear()
-                                in_q.put(text)
+
+                                # ★ [핵심 수정] "stop"이라는 텍스트가 들어오면 읽지 말고 멈춤 명령으로 처리
+                                if text.strip().lower() == "stop":
+                                    print("[PIPE] 'stop' text detected -> Converting to COMMAND.", flush=True)
+                                    while not in_q.empty(): in_q.get_nowait()
+                                    interrupt_evt.set()
+                                    text_buffer = ""
+                                    continue
+
+                                # --- 버퍼링 로직 (기존 유지) ---
+                                text_buffer += text
+
+                                # (KR/EN 파일에 맞춰 기존 정규식 re_end, re_comma 사용)
+                                matches = list(re_end.finditer(text_buffer))
+                                if matches:
+                                    last_idx = matches[-1].end()
+                                    to_send = text_buffer[:last_idx]
+                                    text_buffer = text_buffer[last_idx:]
+                                    in_q.put(to_send)
+                                    continue
+
+                                if len(text_buffer) > 300:
+                                    matches = list(re_comma.finditer(text_buffer))
+                                    if matches:
+                                        last_idx = matches[-1].end()
+                                        to_send = text_buffer[:last_idx]
+                                        text_buffer = text_buffer[last_idx:]
+                                        in_q.put(to_send)
+                                        continue
+
+                                if len(text_buffer) > 500:
+                                    in_q.put(text_buffer)
+                                    text_buffer = ""
+
                         except json.JSONDecodeError:
-                            if line == "/quit": stop_evt.set()
+                            pass
+
                 except pywintypes.error as e:
-                    if e.winerror in [109, 232]: break # 클라이언트 연결 끊김
+                    if e.winerror in [109, 232]: break
                     else: raise
         except Exception as e:
             print(f"[PIPE] Error: {e}", flush=True)
@@ -315,7 +372,6 @@ def run_pipe_loop(in_q, stop_evt, interrupt_evt, signal_q):
         finally:
             if handle: win32file.CloseHandle(handle)
             print("[PIPE] Connection loop reset.", flush=True)
-    print("[PIPE] Worker stopped.", flush=True)
 
 def warmup(tts, spk_id, target_sr, tmpdir):
     """모델 로딩 후 초기 실행 속도 향상을 위한 워밍업"""

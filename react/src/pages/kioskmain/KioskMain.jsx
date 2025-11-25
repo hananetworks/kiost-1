@@ -112,21 +112,22 @@ export default function KioskMain({
 
         const speechTimer = setTimeout(() => {
             if (fullText) {
-                console.log("KioskMain: 안내 음성(Subtitle) 재생:", fullText);
+                console.log("KioskMain: 안내 음성 재생");
                 setIsSpeaking(true);
-                speakText(fullText);
+
+                // ★ [수정] 메인 페이지도 혹시 모를 줄바꿈 제거 및 마침표 보장
+                let ttsText = fullText.replace(/\\n/g, " ").replace(/\n/g, " ").trim();
+                if (!/[.?!]$/.test(ttsText)) ttsText += ".";
+
+                speakText(ttsText);
             }
         }, 2000);
 
-        // Cleanup: TTS 중지 (기존 유지)
         return () => {
             clearTimeout(speechTimer);
-            console.log("KioskMain: Cleanup, TTS 중지 (ALL /stop)");
             window.electronAPI.sendTtsCommand('ALL', { command: "stop" });
             if (setIsSpeaking) setIsSpeaking(false);
         };
-
-        // isSpeaking 상태 변경 시에는 재실행 안 함
     }, [currentTab, lang, setIsSpeaking]);
 
 
