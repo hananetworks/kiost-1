@@ -1,10 +1,14 @@
 import { HashRouter as Router, Routes, Route, Navigate, useNavigate, useLocation } from "react-router-dom";
-import { useState, useEffect, useRef } from "react"; // ◀ useRef 추가
+import { useState, useEffect, useRef } from "react";
 import KioskMain from "./pages/kioskmain/KioskMain";
 import NaturePage from "./pages/nature/NaturePage";
 import HistoryPage from "./pages/history/HistoryPage";
 import AIDialogue from "./pages/ai/AIDialogue";
 import { initializeInputHandler } from "./utils/inputHandler";
+
+// 🔽 [신규] 원격 제어 컴포넌트 임포트 (경로 확인 필수)
+import RemoteControlListener from "./components/remote/RemoteControlListener";
+import BrightnessOverlay from "./components/remote/BrightnessOverlay";
 
 // [신규] 유휴 상태 감지 훅
 /**
@@ -20,7 +24,6 @@ function useIdleTimer(timeout = 10000) { // 테스트용 10초
         }
 
         // 1. "사용 중" 신호 전송
-        // [수정] ◀ 'send' -> 'sendInactivityStatus'
         if (window.electronAPI && typeof window.electronAPI.sendInactivityStatus === 'function') {
             window.electronAPI.sendInactivityStatus(false);
         }
@@ -28,7 +31,6 @@ function useIdleTimer(timeout = 10000) { // 테스트용 10초
         // 2. "유휴 상태"로 전환될 새 타이머 설정
         timerRef.current = setTimeout(() => {
             console.log("IdleTimer: 10초간 활동 없음. 유휴 상태(true) 진입.");
-            // [수정] ◀ 'send' -> 'sendInactivityStatus'
             if (window.electronAPI && typeof window.electronAPI.sendInactivityStatus === 'function') {
                 window.electronAPI.sendInactivityStatus(true);
             }
@@ -79,12 +81,12 @@ function AppContent() {
     const [zoomLevel, setZoomLevel] = useState(1);
     const [voiceSettings, setVoiceSettings] = useState({ volume: 1, rate: 1, pitch: 1 });
     const [isSpeaking, setIsSpeaking] = useState(false);
-    const [isZoomTransitioning, setIsZoomTransitioning] = useState(false); // ✅ 추가
+    const [isZoomTransitioning, setIsZoomTransitioning] = useState(false);
     const navigate = useNavigate();
-    const location = useLocation(); // ✅ 추가
+    const location = useLocation();
 
     // [신규] 유휴 타이머 훅을 AppContent 최상단에서 실행
-    useIdleTimer(); // ◀ 이 한 줄로 타이머가 시작됩니다.
+    useIdleTimer();
 
     // ✅ 줌 레벨 변경 시에만 transition 활성화
     useEffect(() => {
@@ -104,7 +106,7 @@ function AppContent() {
     // ✅ 구글 번역 위젯 로드 후, 마지막 언어로 자동 재적용 (강화버전)
     useEffect(() => {
         const savedLang = localStorage.getItem("app_lang") || "ko";
-        window.activeLang = savedLang; // ✅ 전역변수에 저장 (1회 세팅)
+        window.activeLang = savedLang;
 
         const applyGoogleTranslateLang = () => {
             const select = document.querySelector(".goog-te-combo");
@@ -178,7 +180,6 @@ function AppContent() {
 
     // ✅ ③ TTS 종료 리스너
     useEffect(() => {
-        // [안전장치] ◀ window.electronAPI가 로드되었는지 확인
         if (window.electronAPI && typeof window.electronAPI.onTtsPlaybackFinished === 'function') {
             const removeListener = window.electronAPI.onTtsPlaybackFinished(() => {
                 console.log("App.jsx (전역 리스너): TTS 재생 완료/중단됨.");
@@ -210,7 +211,6 @@ function AppContent() {
                 style={{
                     transform: `scale(${zoomLevel})`,
                     transformOrigin: "top left",
-                    // ✅ 줌 변경할 때만 transition 적용
                     transition: isZoomTransitioning ? "transform 0.3s ease-in-out" : "none",
                     willChange: isZoomTransitioning ? "transform" : "auto",
                 }}
@@ -282,6 +282,12 @@ function AppContent() {
 export default function App() {
     return (
         <Router>
+            {/* 🔽 [신규] 원격 제어 리스너 (UI 없음, 통신만 담당) */}
+            <RemoteControlListener />
+
+            {/* 🔽 [신규] 화면 밝기 오버레이 (화면을 덮는 역할) */}
+            <BrightnessOverlay />
+
             <AppContent />
         </Router>
     );

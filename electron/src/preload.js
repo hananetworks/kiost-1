@@ -1,5 +1,5 @@
 // preload.js (수정본)
-const {contextBridge, ipcRenderer} = require('electron');
+const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
 
@@ -15,9 +15,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // [기존] (현재는 거의 사용되지 않음)
     correctSTT: (text) => ipcRenderer.invoke('stt:correct', text),
 
-    // 🔽 [신규] 볼륨 제어 API 추가 🔽
+    // [기존] 볼륨 제어 API
     setSystemVolume: (volume) => ipcRenderer.invoke('set-system-volume', volume),
     getSystemVolume: () => ipcRenderer.invoke('get-system-volume'),
+
+    // 🚨🚨🚨 [여기가 빠져있었습니다! 추가 필수!] 🚨🚨🚨
+    // 원격 제어 명령 실행 (React -> Main)
+    executeRemoteCommand: (commandData) => ipcRenderer.invoke('execute-remote-command', commandData),
+    // ----------------------------------------------------
 
 
     // --- AI 스트리밍 리스너 (수정 없음) ---
@@ -39,13 +44,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // --- AI 스트리밍 끝 ---
 
 
-    // --- 🔽 [신규] STT 결과를 AI로 넘기는 전용 함수 ---
-    /**
-     * STT 최종 결과를 대화 내역과 함께 메인 프로세스로 보냅니다.
-     * 메인 프로세스의 handleUserSttInput이 응답을 스트리밍합니다.
-     * @param {string} sttText - STT로 변환된 최종 텍스트
-     * @param {object[]} conversationHistory - 현재까지의 대화 내역
-     */
+    // --- [신규] STT 결과를 AI로 넘기는 전용 함수 ---
     submitSttForAI: (sttText, conversationHistory) => {
         ipcRenderer.send('stt:submit-for-ai', { sttText, conversationHistory });
     },
@@ -57,17 +56,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
     sendAudioChunk: (chunk) => ipcRenderer.send('speech:audio-chunk', chunk),
     stopSpeechStream: () => ipcRenderer.send('speech:stop-stream'),
 
-    onSpeechResult: (callback) => { // ◀ 최종 결과 (유지)
+    onSpeechResult: (callback) => {
         const listener = (_event, transcript) => callback(transcript);
         ipcRenderer.on('speech:result', listener);
         return () => ipcRenderer.removeListener('speech:result', listener);
     },
-    onSpeechInterimResult: (callback) => { // ◀ 중간 결과 (유지)
+    onSpeechInterimResult: (callback) => {
         const listener = (_event, transcript) => callback(transcript);
         ipcRenderer.on('speech:interim-result', listener);
         return () => ipcRenderer.removeListener('speech:interim-result', listener);
     },
-    onSpeechError: (callback) => { // ◀ 에러 (유지)
+    onSpeechError: (callback) => {
         const listener = (_event, error) => callback(error);
         ipcRenderer.on('speech:error', listener);
         return () => ipcRenderer.removeListener('speech:error', listener);
@@ -79,14 +78,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     sendTtsCommand: (language, commandObject) => {
         ipcRenderer.send('tts:command', { lang: language, command: commandObject });
     },
-    onTtsPlaybackFinished: (callback) => { // 재생 끝 리스너 (유지)
+    onTtsPlaybackFinished: (callback) => {
         const listener = () => callback();
         ipcRenderer.on('tts:playback-finished', listener);
         return () => ipcRenderer.removeListener('tts:playback-finished', listener);
     },
     // --- TTS 끝 ---
 
-    // 🔽 [신규] '지능형 업데이트'를 위한 유휴 상태 전송 함수 🔽
+    // [기존] 유휴 상태 전송 함수
     sendInactivityStatus: (status) => {
         ipcRenderer.send('app:inactivity-status', status);
     }

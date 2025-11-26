@@ -18,7 +18,32 @@ const ttsPipeClientEN = require('./services/voice/ttsPipeClientEN'); // 영어 T
 
 const volumeControl = require('./services/hardware/volumeControl');
 
+// [신규] 원격 제어 핸들러 로드
+const remoteCommandHandler = require('./services/remote/commandHandler');
+
 function registerIpcHandlers(win) {
+
+    /**
+     * [신규] 원격 제어 명령 처리 핸들러
+     * React(Renderer)에서 요청한 원격 명령을 실행하고 결과를 반환합니다.
+     */
+    ipcMain.handle('execute-remote-command', async (event, { action, payload }) => {
+
+        // 🚨 [추가] 이 로그가 터미널에 찍히는지 봐야 합니다!
+        console.log(`🔥 [Main Process] IPC 요청 받음! Action: ${action}`);
+
+        try {
+            const result = await remoteCommandHandler.execute(action, payload);
+
+            // 🚨 [추가] 결과가 잘 나왔는지 확인
+            console.log(`✅ [Main Process] 실행 완료. 결과:`, result);
+
+            return result;
+        } catch (err) {
+            console.error(`❌ [Main Process] 실행 중 에러:`, err);
+            return { success: false, message: err.message };
+        }
+    });
 
     /**
      * STT 결과를 받아 AI 응답을 스트리밍하는 핸들러
@@ -60,12 +85,12 @@ function registerIpcHandlers(win) {
         }
     });
 
-    // [신규] 시스템 볼륨 설정
+    // [기존 유지] 시스템 볼륨 설정
     ipcMain.handle('set-system-volume', async (event, volume) => {
         return await volumeControl.setVolume(volume);
     });
 
-    // [신규] 현재 시스템 볼륨 가져오기
+    // [기존 유지] 현재 시스템 볼륨 가져오기
     ipcMain.handle('get-system-volume', async () => {
         return await volumeControl.getVolume();
     });

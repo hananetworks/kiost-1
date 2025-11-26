@@ -50,7 +50,12 @@ function createWindow() {
         webPreferences: {
             preload: path.join(__dirname, "preload.js"),
             contextIsolation: true,
-            sandbox: false
+            sandbox: false,
+
+            webSecurity: false,              // CORS 및 보안 정책 무력화 (개발용)
+            allowRunningInsecureContent: true // HTTP/HTTPS 혼합 허용
+
+
         },
     });
 
