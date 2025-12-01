@@ -69,3 +69,4 @@ Thumbs.db
 build_py/
 python-env/
 python_worker/
+RULES.md
