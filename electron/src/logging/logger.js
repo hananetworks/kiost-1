@@ -1,4 +1,4 @@
-const { app, dialog } = require('electron');
+const { app } = require('electron');
 const log = require('electron-log');
 const path = require('path');
 const os = require('os');
@@ -7,9 +7,16 @@ const si = require('systeminformation');
 let resourceLogInterval;
 
 function initializeLogging() {
-    // 로그 파일이 C:\Users\[사용자]\AppData\Roaming\MAXEE promotional\logs\main.log 에 저장됩니다.
-    const logDir = path.join(app.getPath('appData'), 'MAXEE promotional', 'logs');
-    log.transports.file.resolvePathFn = () => path.join(logDir, 'main.log');
+    // [수정됨] 기존에는 별도 폴더(MAXEE promotional)를 썼지만,
+    // 이제는 앱 표준 데이터 폴더(userData) 내부의 logs 폴더로 통합합니다.
+    // 결과 경로: C:\Users\[사용자]\AppData\Roaming\maxee-ticketing\logs\main.log
+    const logDir = path.join(app.getPath('userData'), 'logs');
+
+    // [설정] 파일 저장 경로 강제 지정
+    log.transports.file.resolvePathFn = (variables) => {
+        // variables.fileName이 없으면 기본값 main.log 사용
+        return path.join(logDir, variables.fileName || 'main.log');
+    };
 
     // 로그 형식
     log.transports.file.format = '[{y}-{m}-{d} {h}:{i}:{s}.{ms}] [{level}] {text}';
@@ -19,9 +26,7 @@ function initializeLogging() {
     log.transports.file.level = 'info';
     log.transports.console.level = 'debug';
 
-    // 기존 writeLog 함수를 electron-log로 대체
-    // 예: writeLog("시작") -> log.info("시작")
-    log.info("[Logger] 로깅 모듈 초기화 완료.");
+    log.info(`[Logger] 로깅 모듈 초기화 완료. 저장 경로: ${logDir}`);
 }
 
 // 시스템 리소스(CPU/메모리) 로깅 함수
