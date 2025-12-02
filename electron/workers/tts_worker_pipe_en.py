@@ -17,6 +17,40 @@ import logging
 warnings.filterwarnings("ignore")  # pkg_resources, FutureWarning 등 모든 잡다한 경고 무시
 logging.getLogger("transformers").setLevel(logging.ERROR) # Transformers 내부 로그 끄기
 
+# ==================================================================================
+# ✅ [추가] NLTK 데이터 강제 확보 로직 (파일 깨짐/누락 방지)
+# ==================================================================================
+def ensure_nltk_resources():
+    """영어 TTS(g2p_en) 구동에 필수적인 NLTK 데이터를 확인하고 없으면 다운로드합니다."""
+    required_resources = [
+        'taggers/averaged_perceptron_tagger',
+        'taggers/averaged_perceptron_tagger_eng', # ★ 에러의 주범 (최신 버전에서 필요)
+        'corpora/cmudict',
+        'tokenizers/punkt'
+    ]
+
+    # 윈도우 표준 경로(%APPDATA%/nltk_data)를 우선 등록 (권한 문제 방지)
+    app_data = os.environ.get('APPDATA')
+    if app_data:
+        default_path = os.path.join(app_data, 'nltk_data')
+        if default_path not in nltk.data.path:
+            nltk.data.path.append(default_path)
+
+    print("[INIT] Checking NLTK resources...", flush=True)
+    for resource in required_resources:
+        try:
+            nltk.data.find(resource)
+        except LookupError:
+            resource_name = resource.split('/')[-1]
+            print(f"[INIT] Downloading missing resource: {resource_name}...", flush=True)
+            try:
+                nltk.download(resource_name, quiet=True)
+            except Exception as e:
+                print(f"[WARN] Failed to download {resource_name}: {e}", flush=True)
+
+# 실행 시 즉시 체크
+ensure_nltk_resources()
+# ==================================================================================
 
 
 # --- 전역 변수 및 설정 ---
