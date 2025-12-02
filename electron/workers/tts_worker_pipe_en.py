@@ -12,6 +12,11 @@ import traceback
 import nltk
 from melo.api import TTS
 
+import warnings
+import logging
+warnings.filterwarnings("ignore")  # pkg_resources, FutureWarning 등 모든 잡다한 경고 무시
+logging.getLogger("transformers").setLevel(logging.ERROR) # Transformers 내부 로그 끄기
+
 
 
 # --- 전역 변수 및 설정 ---

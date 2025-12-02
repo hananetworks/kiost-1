@@ -12,7 +12,6 @@ const { initializePythonServices, cleanupPythonServices } = require('./services/
 const { registerIpcHandlers } = require('./ipcHandlers');
 const { ensurePythonEnvironment } = require('./pythonBootstrap');
 
-// 🛑 [경로 수정됨] core -> startup
 const { startLocalServer } = require('./startup/localServer');
 const { createWindow, waitForUI } = require('./startup/windowManager');
 const { setupAppEvents } = require('./startup/appEvents');
