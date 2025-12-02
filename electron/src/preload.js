@@ -7,42 +7,35 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // ============================================================
     on: (channel, func) => {
         const validChannels = [
-            // 1. 앱 업데이트 관련
-            'update-checking',
-            'update-available',
-            'update-not-available',
-            'download-progress',
-            'update-downloaded',
-            'update-error',
+            // 🚨 [필수] 업데이트 관련 채널
+            'update-checking', 'update-available', 'update-not-available',
+            'download-progress', 'update-downloaded', 'update-error',
+            // 🚨 [필수] Python 다운로드 관련 채널
+            'python-download-start', 'python-download-progress',
+            'python-extracting', 'python-download-complete', 'python-download-error',
 
-            // 2. Python 업데이트 관련
-            'python-download-start',
-            'python-download-progress',
-            'python-extracting',
-            'python-download-complete',
-            'python-download-error'
+            // 기존 채널들
+            'speech-result', 'speech-interim-result', 'speech-error',
+            'ai-chunk', 'ai-stream-end', 'ai-error', 'tts-playback-finished'
         ];
-        if (validChannels.includes(channel)) {
-            // 이벤트 리스너 등록
-            const subscription = (event, ...args) => func(...args);
-            ipcRenderer.on(channel, subscription);
 
-            // 리스너 제거 함수 반환 (React useEffect clean-up용)
-            return () => {
-                ipcRenderer.removeListener(channel, subscription);
+        if (validChannels.includes(channel)) {
+            const subscription = (event, ...args) => {
+                // console.log(`📡 [Preload] 신호 수신: ${channel}`, args); // 디버깅용
+                func(...args);
             };
+            ipcRenderer.on(channel, subscription);
+            return () => ipcRenderer.removeListener(channel, subscription);
         }
     },
 
-    // 업데이트 설치 요청 (React -> Main)
+    // --- [2] 송신 (Renderer -> Main) ---
     send: (channel, data) => {
-        const validChannels = ['quit-and-install'];
+        const validChannels = ['quit-and-install', 'python-download-start', 'start-speech-stream', 'stop-speech-stream', 'stt:submit-for-ai', 'tts:command', 'app:inactivity-status', 'speech:audio-chunk'];
         if (validChannels.includes(channel)) {
             ipcRenderer.send(channel, data);
         }
     },
-    // ============================================================
-
 
     // --- [기존 기능 유지] ---
     toggleDevTools: () => ipcRenderer.send('toggle-debug'),
