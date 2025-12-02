@@ -149,22 +149,36 @@ app.whenReady().then(async () => {
     // 5. 메인 윈도우 생성 - *순서 변경됨 (먼저 실행)*
     createWindow();
 
-    // *창이 로드될 때까지 1초 대기 (UI가 준비되어야 진행 상황을 그림)*
-    await new Promise(r => setTimeout(r, 1000));
+    // 🛑 [수정] 단순 타임아웃 대신, 'did-finish-load' 이벤트를 기다림
+    // React가 로딩되고 JS가 실행될 준비가 될 때까지 기다립니다.
+    await new Promise(resolve => {
+        // 이미 로드되었으면 즉시 진행
+        if (!win.webContents.isLoading()) {
+            resolve();
+            return;
+        }
+        // 로딩 중이면 끝날 때까지 대기
+        win.webContents.once('did-finish-load', resolve);
+    });
+
+    // 안전하게 1초만 더 여유를 줌 (React Hook 등록 시간 확보)
+    await new Promise(r => setTimeout(r, 1500));
+
 
     // ==========================================================================
     // [0순위] 앱 자체 업데이트 확인 (화면에 진행바 뜸)
     // ==========================================================================
     if (app.isPackaged) {
         try {
-            // win 객체를 전달하여 UI에 진행률 표시
+            log.info("[Main] 📢 UI 로드 완료. 업데이트 체크 시작..."); // 로그 추가
             const isUpdating = await checkForUpdatesBlocking(win);
+
             if (isUpdating) {
-                log.info("[Main] ⛔ 업데이트가 감지되어 설치 대기 중...");
-                return; // 업데이트 중이면 여기서 멈춤 (autoUpdater가 재시작함)
+                log.info("[Main] ⛔ 업데이트 설치 중... (앱 대기)");
+                return;
             }
         } catch (err) {
-            log.error(`[Main] 초기 업데이트 확인 중 오류 (무시하고 진행): ${err.message}`);
+            log.error(`[Main] 초기 업데이트 에러: ${err.message}`);
         }
     }
 
