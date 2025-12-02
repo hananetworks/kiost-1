@@ -8,12 +8,9 @@ const dotenv = require('dotenv');
 // [모듈 로드]
 const { log, initializeLogging, startResourceLogging } = require('./logging/logger');
 const { initializeConfig } = require('./config/setup');
-// [수정] 업데이트 매니저에서 차단(Blocking) 함수와 초기화 함수 둘 다 가져오기
 const { initializeUpdater, checkForUpdatesBlocking } = require('./updater/updateManager');
 const { initializePythonServices, cleanupPythonServices } = require('./services/python/python-server');
 const { registerIpcHandlers } = require('./ipcHandlers');
-
-// 파이썬 다운로더 모듈
 const { ensurePythonEnvironment } = require('./pythonBootstrap');
 
 let win; // BrowserWindow 인스턴스
@@ -51,11 +48,8 @@ function createWindow() {
             preload: path.join(__dirname, "preload.js"),
             contextIsolation: true,
             sandbox: false,
-
-            webSecurity: false,              // CORS 및 보안 정책 무력화 (개발용)
-            allowRunningInsecureContent: true // HTTP/HTTPS 혼합 허용
-
-
+            webSecurity: false,
+            allowRunningInsecureContent: true
         },
     });
 
@@ -105,10 +99,7 @@ function startLocalServer() {
     });
 }
 
-// --- [핵심] 앱 실행 로직 ---
 app.whenReady().then(async () => {
-
-    // 1. 로깅 모듈 초기화
     initializeLogging();
     log.info("=============================================");
     log.info(`[Main] App 시작. Version: ${app.getVersion()}`);
@@ -116,26 +107,18 @@ app.whenReady().then(async () => {
     try {
         const envPath = app.isPackaged
             ? path.join(process.resourcesPath, '.env')
-            : path.join(__dirname, '../../.env'); // 프로젝트 구조에 따라 경로 조정 필요
+            : path.join(__dirname, '../../.env');
 
         if (fs.existsSync(envPath)) {
             const envConfig = dotenv.parse(fs.readFileSync(envPath));
             if (envConfig.GH_TOKEN) {
-                // electron-updater가 사용할 수 있도록 환경변수에 등록
                 process.env.GH_TOKEN = envConfig.GH_TOKEN;
                 log.info("[Main] .env에서 GH_TOKEN을 로드하여 process.env에 주입했습니다.");
-            } else {
-                log.warn("[Main] .env 파일은 있지만 GH_TOKEN이 없습니다.");
             }
-        } else {
-            log.warn(`[Main] .env 파일을 찾을 수 없습니다: ${envPath}`);
         }
     } catch (e) {
         log.error(`[Main] 토큰 로드 중 오류: ${e.message}`);
     }
-
-    log.info(`[Main] OS: ${process.platform} ${process.arch}`);
-    log.info("=============================================");
 
     // 2. 설정 초기화
     try {
@@ -158,50 +141,51 @@ app.whenReady().then(async () => {
         app.quit();
     });
 
+    // 4. 로컬 서버 시작 (패키징 시) - *순서 변경됨 (먼저 실행)*
+    if (app.isPackaged) {
+        startLocalServer();
+    }
+
+    // 5. 메인 윈도우 생성 - *순서 변경됨 (먼저 실행)*
+    createWindow();
+
+    // *창이 로드될 때까지 1초 대기 (UI가 준비되어야 진행 상황을 그림)*
+    await new Promise(r => setTimeout(r, 1000));
+
     // ==========================================================================
-    // [0순위] 앱 자체 업데이트 확인 (Electron 앱 업데이트)
+    // [0순위] 앱 자체 업데이트 확인 (화면에 진행바 뜸)
     // ==========================================================================
     if (app.isPackaged) {
         try {
-            const isUpdating = await checkForUpdatesBlocking();
+            // win 객체를 전달하여 UI에 진행률 표시
+            const isUpdating = await checkForUpdatesBlocking(win);
             if (isUpdating) {
-                log.info("[Main] ⛔ 업데이트가 감지되어 앱 구동을 중단하고 설치를 대기합니다.");
-                return; // 업데이트 중이면 여기서 멈춤
+                log.info("[Main] ⛔ 업데이트가 감지되어 설치 대기 중...");
+                return; // 업데이트 중이면 여기서 멈춤 (autoUpdater가 재시작함)
             }
         } catch (err) {
             log.error(`[Main] 초기 업데이트 확인 중 오류 (무시하고 진행): ${err.message}`);
         }
     }
 
-    // 4. 로컬 서버 시작 (패키징 시)
-    if (app.isPackaged) {
-        startLocalServer();
-    }
-
-    // 5. 메인 윈도우 생성 (여기서 win이 생성됨)
-    createWindow();
-
     // ==========================================================================
-    // [핵심 변경] 6. Python 환경 점검 및 서비스 초기화
+    // [1순위] Python 환경 점검 및 서비스 초기화 (화면에 진행바 뜸)
     // ==========================================================================
     try {
         let pythonExePath;
 
         if (app.isPackaged) {
-            // [배포 모드] 버전 체크 및 다운로드 수행 (win이 있어야 진행률 표시 가능)
+            // win 객체를 전달하여 UI에 다운로드 진행률 표시
             pythonExePath = await ensurePythonEnvironment(win);
         } else {
-            // [개발 모드] 다운로드 로직 생략하고 로컬 경로 강제 지정
+            // 개발 모드
             log.info("[Main] 개발 모드: Python 다운로드 점검을 생략합니다.");
-
-            // 개발 중 받아둔 python-env 폴더 경로 사용
             pythonExePath = path.join(app.getPath('userData'), 'python-env', 'kiosk_python.exe');
         }
 
-        // 경로 유효성 검사 (개발 모드일 때 파일이 없으면 경고)
+        // 경로 유효성 검사
         if (!fs.existsSync(pythonExePath) && !app.isPackaged) {
             log.warn(`[Main Warning] 개발 모드인데 Python 파일이 없습니다: ${pythonExePath}`);
-            log.warn("최초 1회는 배포 모드로 빌드하여 실행하거나, 수동으로 파일을 해당 위치에 복사해야 합니다.");
         }
 
         // 서비스 시작
@@ -225,7 +209,6 @@ app.whenReady().then(async () => {
         initializeUpdater(win);
     }
 
-    // 개발자 도구 토글
     if (!app.isPackaged) {
         globalShortcut.register("F12", () => {
             if (win) win.webContents.toggleDevTools();
@@ -241,48 +224,36 @@ app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
 });
 
-// 앱 종료 시 자원 정리
 app.on("will-quit", () => {
     log.info("[Main] will-quit: 앱 종료 시작.");
-    cleanupPythonServices(); // Python 프로세스 정리
+    cleanupPythonServices();
     globalShortcut.unregisterAll();
     log.info("[Main] 앱 종료 완료.");
 });
 
-// [수정] 예외 처리 및 자동 재시작 로직
 process.on('uncaughtException', (error) => {
-    // 1. 로그 기록
     log.error(`[Watchdog FATAL] 처리되지 않은 예외 발생: ${error.message}`);
     log.error(error.stack);
 
-    // 2. 가동 시간 체크 (초 단위)
     const runTime = process.uptime();
-    const MIN_UPTIME = 10; // 최소 10초는 버텼어야 재시작 허용
+    const MIN_UPTIME = 10;
 
     if (runTime < MIN_UPTIME) {
-        // 10초도 안 돼서 죽었다면, 재시작해도 또 죽을 확률이 99%임 -> 그냥 종료
-        log.error(`[Watchdog] 앱 실행 후 ${Math.floor(runTime)}초 만에 충돌했습니다. 무한 재부팅 방지를 위해 재시작하지 않고 종료합니다.`);
-
-        // 개발 모드일 때만 메시지 박스 (배포 시엔 조용히 꺼짐)
+        log.error(`[Watchdog] 앱 실행 후 ${Math.floor(runTime)}초 만에 충돌. 재시작 중단.`);
         if (!app.isPackaged) {
-            dialog.showErrorBox("치명적 오류 (재시작 중단)",
-                `앱이 너무 빨리 충돌했습니다 (${Math.floor(runTime)}초).\n무한 루프 방지를 위해 자동 재시작을 하지 않습니다.\n\n에러: ${error.message}`);
+            dialog.showErrorBox("치명적 오류", `앱 충돌 (${Math.floor(runTime)}초).\n${error.message}`);
         }
-
-        app.exit(1); // 에러 코드로 완전 종료
+        app.exit(1);
         return;
     }
 
-    // 3. 10초 이상 잘 돌다가 죽은 경우 -> 일시적 오류로 판단하고 재시작
-    log.info("[Watchdog] 시스템 안정성을 위해 1초 후 앱을 재시작합니다.");
-
+    log.info("[Watchdog] 1초 후 재시작합니다.");
     if (!app.isPackaged) {
-        // 개발 중에는 에러 확인하라고 메시지 박스 띄움
-        dialog.showErrorBox("오류 발생", `예기치 않은 오류가 발생했습니다.\n(배포 시 자동 재시작됨)\n\n${error.message}`);
+        dialog.showErrorBox("오류 발생", `예기치 않은 오류가 발생했습니다.\n${error.message}`);
     }
 
     setTimeout(() => {
-        app.relaunch(); // 앱 재시작
-        app.exit(0);    // 현재 프로세스 종료
+        app.relaunch();
+        app.exit(0);
     }, 1000);
 });

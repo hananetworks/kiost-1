@@ -127,9 +127,10 @@ autoUpdater.allowPrerelease = false;
 const MAX_RETRIES = 3;
 
 /**
- * [신규] 앱 시작 최우선 순위: 업데이트 확인 (재시도 로직 포함)
+ * 앱 시작 최우선 순위: 업데이트 확인 (재시도 로직 포함)
+ * win 객체를 받아 UI에 상태를 알림
  */
-async function checkForUpdatesBlocking() {
+async function checkForUpdatesBlocking(win) {
     log.info("[Updater] 🔍 시작 전 업데이트 확인 중... (Blocking Check + Retry)");
 
     // 1. 인증 설정
@@ -139,8 +140,9 @@ async function checkForUpdatesBlocking() {
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
         try {
             log.info(`[Updater] 업데이트 시도 ${attempt}/${MAX_RETRIES}...`);
+            if (win) win.webContents.send('update-checking');
 
-            const result = await runUpdateCheck();
+            const result = await runUpdateCheck(win);
 
             if (result === 'UPDATE_FOUND') return true; // 설치 중 -> 앱 시작 중단
             if (result === 'NO_UPDATE') return false; // 없음 -> 앱 시작
@@ -153,6 +155,7 @@ async function checkForUpdatesBlocking() {
                 await new Promise(r => setTimeout(r, 2000));
             } else {
                 log.error("[Updater] ❌ 업데이트 실패 (최대 재시도 초과). 현재 버전으로 앱을 시작합니다.");
+                if (win) win.webContents.send('update-error', err.message);
                 return false;
             }
         }
@@ -161,7 +164,7 @@ async function checkForUpdatesBlocking() {
 }
 
 /**
- * [내부 함수] 인증 설정
+ * 인증 설정
  */
 function setupAuth() {
     try {
@@ -190,12 +193,11 @@ function setupAuth() {
 }
 
 /**
- * [핵심 수정] 실제 업데이트 체크 및 이벤트 핸들링
+ * 실제 업데이트 체크 및 이벤트 핸들링
  */
-function runUpdateCheck() {
+function runUpdateCheck(win) {
     return new Promise((resolve, reject) => {
-        // 1. 타임아웃 설정 (15초로 넉넉하게)
-        // 주의: 이 시간은 "업데이트가 있는지 확인하는 시간"입니다. 다운로드 시간 아님.
+        // 1. 타임아웃 설정 (15초)
         let timer = setTimeout(() => {
             cleanup();
             reject(new Error("Check Timeout (15s)"));
@@ -210,25 +212,30 @@ function runUpdateCheck() {
             autoUpdater.removeAllListeners('download-progress');
         };
 
-        // 2. 업데이트 발견됨 -> [중요] 타임아웃 해제!
+        // 2. 업데이트 발견됨 -> 타임아웃 해제
         autoUpdater.once('update-available', (info) => {
-            // ★ 여기서 타이머를 꺼야 다운로드 중에 타임아웃 에러가 안 납니다!
             if (timer) clearTimeout(timer);
             timer = null;
-
             log.info(`[Updater] 🚀 새 버전 발견! (${info.version}). 다운로드 진행 중...`);
+            if (win) win.webContents.send('update-available', info);
         });
 
-        // 3. 다운로드 진행률 (로그 너무 많이 찍히면 줄이세요)
+        // 3. 다운로드 진행률 전송
         autoUpdater.on('download-progress', (progressObj) => {
             log.info(`[Updater] 다운로드: ${parseInt(progressObj.percent)}%`);
+            if (win) win.webContents.send('download-progress', progressObj);
         });
 
         // 4. 다운로드 완료 -> 설치
         autoUpdater.once('update-downloaded', (info) => {
             cleanup();
             log.info('[Updater] ✅ 다운로드 및 검증 완료. 재시작합니다.');
-            autoUpdater.quitAndInstall(true, true);
+            if (win) win.webContents.send('update-downloaded', info);
+
+            // UI에 완료 메시지를 보여줄 시간(3초)을 준 뒤 재시작
+            setTimeout(() => {
+                autoUpdater.quitAndInstall(true, true);
+            }, 3000);
             resolve('UPDATE_FOUND');
         });
 
@@ -236,13 +243,14 @@ function runUpdateCheck() {
         autoUpdater.once('update-not-available', (info) => {
             cleanup();
             log.info('[Updater] 현재 최신 버전입니다.');
+            if (win) win.webContents.send('update-not-available');
             resolve('NO_UPDATE');
         });
 
         // 6. 에러 발생
         autoUpdater.once('error', (err) => {
             cleanup();
-            reject(err); // 위쪽 루프에서 잡아서 재시도
+            reject(err);
         });
 
         // 체크 시작
@@ -252,6 +260,7 @@ function runUpdateCheck() {
 
 function initializeUpdater(mainWindow) {
     log.info("[Updater] 백그라운드 업데이트 모듈 초기화.");
+    // 1시간마다 백그라운드 체크
     setInterval(() => { autoUpdater.checkForUpdates().catch(e => {}); }, 60 * 60 * 1000);
 }
 
