@@ -86,7 +86,8 @@
       "uninstallerIcon": "resources/icon.ico",
       "installerHeaderIcon": "resources/icon.ico",
       "runAfterFinish": true,
-      "shortcutName": "MAXEE Promotional"
+      "shortcutName": "MAXEE Promotional",
+      "differentialPackage": true
     }
   },
   "devDependencies": {

@@ -9,7 +9,7 @@ const { log, initializeLogging, startResourceLogging } = require('./logging/logg
 const { initializeConfig } = require('./config/setup');
 const { initializeUpdater, checkForUpdatesBlocking } = require('./updater/updateManager');
 const { initializePythonServices, cleanupPythonServices } = require('./services/python/python-server');
-const { registerIpcHandlers } = require('./ipcHandlers');
+const { registerAllIpcHandlers } = require('./ipc/ipcManager');
 const { ensurePythonEnvironment } = require('./pythonBootstrap');
 
 const { startLocalServer } = require('./startup/localServer');
