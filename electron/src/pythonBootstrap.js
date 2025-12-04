@@ -7,8 +7,8 @@ const crypto = require('crypto');
 const { log } = require('./logging/logger');
 const dotenv = require('dotenv');
 
-// [설정] 파이썬 배포 태그 (버전 정보)
-const REQUIRED_ENV_VERSION = 'env-v1.0.0';
+// [설정] 파이썬 배포 태그 (python-env-deploy.yml에서 배포한 버전과 일치해야 함)
+const REQUIRED_ENV_VERSION = 'env-v1.2.0';
 const REPO_OWNER = 'hananetworks';
 const REPO_NAME = 'kiosk-python-runtime';
 const MAX_RETRIES = 3;
@@ -32,7 +32,7 @@ function loadEnvToken() {
     return null;
 }
 
-// [유틸] 파일 해시 계산
+// [유틸] 파일 해시 계산 (SHA256)
 function calculateFileHash(filePath) {
     return new Promise((resolve, reject) => {
         const hash = crypto.createHash('sha256');
@@ -43,8 +43,8 @@ function calculateFileHash(filePath) {
     });
 }
 
-// [유틸] 다운로드 함수 (진행률 전송 추가됨)
-async function downloadWithRetry(url, destPath, token, win, retries = MAX_RETRIES) {
+// [유틸] 재시도 로직이 포함된 다운로드 함수
+async function downloadWithRetry(url, destPath, token, retries = MAX_RETRIES) {
     for (let i = 1; i <= retries; i++) {
         try {
             log.info(`[Download] 시도 ${i}/${retries}: ${path.basename(destPath)}`);
@@ -59,22 +59,8 @@ async function downloadWithRetry(url, destPath, token, win, retries = MAX_RETRIE
 
             if (!res.ok) throw new Error(`HTTP 오류: ${res.status} ${res.statusText}`);
 
-            // 진행률 계산 준비
-            const totalBytes = parseInt(res.headers.get('content-length'), 10);
-            let downloadedBytes = 0;
             const fileStream = fs.createWriteStream(destPath);
-
             await new Promise((resolve, reject) => {
-                res.body.on('data', (chunk) => {
-                    downloadedBytes += chunk.length;
-
-                    // 윈도우가 있고 전체 크기를 알 수 있을 때 진행률 전송
-                    if (win && totalBytes) {
-                        const percent = (downloadedBytes / totalBytes) * 100;
-                        win.webContents.send('python-download-progress', percent);
-                    }
-                });
-
                 res.body.pipe(fileStream);
                 res.body.on('error', reject);
                 fileStream.on('finish', resolve);
@@ -92,6 +78,9 @@ async function downloadWithRetry(url, destPath, token, win, retries = MAX_RETRIE
 }
 
 async function ensurePythonEnvironment(win) {
+    // [추가] 점검 시작 알림 (UI 상태 변경용)
+    if (win) win.webContents.send('python-check-start');
+
     // 1. 버전 체크
     let currentVersion = null;
     if (fs.existsSync(VERSION_FILE)) {
@@ -99,12 +88,18 @@ async function ensurePythonEnvironment(win) {
     }
     log.info(`[PythonBootstrap] 현재: ${currentVersion} / 목표: ${REQUIRED_ENV_VERSION}`);
 
+    // [핵심] 이미 설치되어 있으면 Pass 신호 전송
     if (currentVersion === REQUIRED_ENV_VERSION && fs.existsSync(PYTHON_EXE)) {
         log.info('[PythonBootstrap] 최신 버전 보유 중. (검증 생략)');
+        if (win) {
+            win.webContents.send('python-check-pass');
+            // 사용자가 "완료" 메시지를 볼 수 있게 0.5초 대기
+            await new Promise(r => setTimeout(r, 500));
+        }
         return PYTHON_EXE;
     }
 
-    // 2. 다운로드 준비 알림
+    // 2. 다운로드 준비
     log.info('[PythonBootstrap] 새 버전 발견! 다운로드 시작...');
     if (win) win.webContents.send('python-download-start');
 
@@ -125,12 +120,14 @@ async function ensurePythonEnvironment(win) {
         const hashAsset = releaseData.assets.find(a => a.name === 'hash.txt');
 
         if (!zipAsset) throw new Error("python-env.zip 파일이 없습니다.");
+        if (!hashAsset) log.warn("hash.txt 파일이 없습니다. (무결성 검증 건너뜀)");
 
-        // 4. 파일 다운로드 (win 객체 전달하여 진행률 표시)
-        await downloadWithRetry(zipAsset.url, tempZipPath, token, win);
-
+        // 4. 파일 다운로드
+        // (다운로드 중 진행 상황을 UI에 알리고 싶다면 downloadWithRetry 함수 내에서 win.webContents.send를 호출하거나
+        //  fetch의 body stream에서 이벤트를 발생시켜야 하지만, 여기서는 단순화함)
+        await downloadWithRetry(zipAsset.url, tempZipPath, token);
         if (hashAsset) {
-            await downloadWithRetry(hashAsset.url, tempHashPath, token, null);
+            await downloadWithRetry(hashAsset.url, tempHashPath, token);
         }
 
         // 5. 무결성 검증
@@ -145,21 +142,21 @@ async function ensurePythonEnvironment(win) {
             log.info('[PythonBootstrap] 무결성 검증 통과! ✅');
         }
 
-        // 6. 압축 해제 및 설치
-        log.info('[PythonBootstrap] 압축 해제 및 설치 적용...');
+        // 6. 압축 해제 (UI 알림)
         if (win) win.webContents.send('python-extracting');
+        log.info('[PythonBootstrap] 압축 해제 및 설치 적용...');
 
         if (fs.existsSync(PYTHON_ENV_PATH)) {
-            try { fs.rmSync(PYTHON_ENV_PATH, { recursive: true, force: true }); } catch(e) {}
+            try { fs.rmSync(PYTHON_ENV_PATH, { recursive: true, force: true }); } catch(e) {
+                log.warn(`기존 폴더 삭제 실패: ${e.message}`);
+            }
         }
 
         const zip = new AdmZip(tempZipPath);
         zip.extractAllTo(USER_DATA_PATH, true);
 
-        // 버전 기록
         fs.writeFileSync(VERSION_FILE, REQUIRED_ENV_VERSION);
 
-        // 임시 파일 정리
         try { fs.unlinkSync(tempZipPath); } catch(e) {}
         try { fs.unlinkSync(tempHashPath); } catch(e) {}
 
@@ -170,9 +167,7 @@ async function ensurePythonEnvironment(win) {
     } catch (error) {
         log.error(`[PythonBootstrap Error] ${error.message}`);
         if (win) win.webContents.send('python-download-error', error.message);
-        if (fs.existsSync(tempZipPath)) {
-            try { fs.unlinkSync(tempZipPath); } catch(e) {}
-        }
+        if (fs.existsSync(tempZipPath)) fs.unlinkSync(tempZipPath);
         throw error;
     }
 }
