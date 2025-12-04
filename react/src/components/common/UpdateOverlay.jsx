@@ -7,6 +7,11 @@ export default function UpdateOverlay({ status, progress, version }) {
     let message = "잠시만 기다려 주세요.";
 
     switch (status) {
+
+        case 'startup':
+            title = "시스템 초기화 중";
+            message = "키오스크 환경을 점검하고 있습니다...";
+            break;
         case 'checking':
             title = "업데이트 확인 중";
             message = "최신 버전을 확인하고 있습니다...";

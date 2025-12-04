@@ -9,6 +9,7 @@ const { log, initializeLogging, startResourceLogging } = require('./logging/logg
 const { initializeConfig } = require('./config/setup');
 const { initializeUpdater, checkForUpdatesBlocking } = require('./updater/updateManager');
 const { initializePythonServices, cleanupPythonServices } = require('./services/python/python-server');
+// [수정] 오타 방지를 위해 import한 이름 그대로 사용
 const { registerAllIpcHandlers } = require('./ipc/ipcManager');
 const { ensurePythonEnvironment } = require('./pythonBootstrap');
 
@@ -55,45 +56,71 @@ app.whenReady().then(async () => {
     // (A) 서버 시작
     startLocalServer();
 
-    // (B) 윈도우 생성
+    // (B) 윈도우 생성 (React 앱 실행 - 초기 상태는 'startup' 오버레이 표시 중)
     win = createWindow();
 
-    // (C) React 로딩 대기 (안전장치: 3초)
-    // 이 대기가 없으면 화면에 업데이트 바가 안 뜹니다!
+    // [중요 1] IPC 핸들러는 윈도우 생성 직후, UI 로딩 전에 등록해야 안전합니다.
+    registerAllIpcHandlers(win);
+
+    // (C) React UI 로딩 대기
     log.info("[Main] UI 로딩 대기 중...");
     await waitForUI(win);
-    await new Promise(r => setTimeout(r, 3000));
-    log.info("[Main] UI 준비 완료. 로직 시작.");
+
+    // UI가 로딩되었으므로 오버레이가 떠 있을 것입니다.
+    log.info("[Main] UI 로딩 완료. 시스템 점검 시작.");
 
     // (D) 앱 업데이트 확인 (Blocking)
+    // - 배포 버전일 때만 확인
     if (app.isPackaged) {
         try {
-            // win을 넘겨야 화면에 진행률이 나옵니다
+            // 1. 오버레이 문구를 '업데이트 확인 중'으로 변경
+            win.webContents.send('update-checking');
+
+            // 2. 업데이트 확인 (업데이트 있으면 설치 후 자동 종료됨)
             const isUpdating = await checkForUpdatesBlocking(win);
-            if (isUpdating) return; // 업데이트 중이면 중단
-        } catch (err) { log.error(err); }
+
+            // 업데이트 중이면(재시작 대기 중이면) 더 이상 진행하지 않음
+            if (isUpdating) return;
+
+        } catch (err) {
+            log.error(`[Main] 업데이트 확인 중 오류 (무시하고 진행): ${err.message}`);
+        }
     }
 
     // (E) Python 환경 점검 & 실행
     try {
         let pyPath;
         if (app.isPackaged) {
-            // win을 넘겨야 화면에 다운로드 진행률이 나옵니다
+            // [참고] ensurePythonEnvironment 내부에서 'python-download-start' 등의 이벤트를 보내 오버레이를 갱신함
             pyPath = await ensurePythonEnvironment(win);
         } else {
             log.info("[Main] 개발 모드: Python 다운로드 생략");
             pyPath = path.join(app.getPath('userData'), 'python-env', 'kiosk_python.exe');
         }
+
+        // 파이썬 서버 시작
         initializePythonServices(win, pyPath);
-    } catch (err) { log.error(err); }
+
+    } catch (err) {
+        log.error(`[Main] 파이썬 초기화 오류: ${err.message}`);
+        // 파이썬 실패 시 사용자에게 알림을 띄우거나, 에러 오버레이 유지 가능
+        // 여기서는 일단 진행하도록 둠 (필요 시 수정)
+    }
 
     // (F) 나머지 기능 활성화
-    registerIpcHandlers(win);
     startResourceLogging();
-    if (app.isPackaged) initializeUpdater(win);
+    if (app.isPackaged) initializeUpdater(win); // 백그라운드 주기적 감시 시작
 
     // 개발 모드 F12
     if (!app.isPackaged) {
         globalShortcut.register("F12", () => win.webContents.toggleDevTools());
     }
+
+    // [핵심] 모든 점검 완료! React에게 "이제 메인 화면 보여줘" 신호 전송
+    log.info("[Main] 모든 초기화 완료. 키오스크 메인 화면 진입.");
+
+    // (선택사항) 사용자가 "완료" 문구를 0.5초라도 볼 수 있게 짧은 딜레이
+    setTimeout(() => {
+        win.webContents.send('app-ready');
+    }, 500);
 });

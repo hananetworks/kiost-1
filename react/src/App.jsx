@@ -164,22 +164,25 @@ function AppContent() {
 }
 
 export default function App() {
-    // 🚨 [필수] 여기서 업데이트 상태를 받아와야 UI에 그릴 수 있습니다!
     const { updateStatus, progress, version } = useAutoUpdate();
+
+    // 'idle' 상태가 아니면 무조건 오버레이가 지배함
+    // startup, checking, downloading... 전부 isUpdating = true
+    const isUpdating = updateStatus !== 'idle';
 
     return (
         <Router>
-            {/* 🚨 [필수] 업데이트 오버레이를 최상단에 배치 */}
+            {/* 오버레이가 항상 떠 있음 (startup 상태 포함) */}
             <UpdateOverlay
                 status={updateStatus}
                 progress={progress}
                 version={version}
             />
 
-            {/* 화면 밝기 오버레이 */}
             <BrightnessOverlay />
 
-            <AppContent />
+            {/* idle 상태가 되기 전엔 렌더링조차 하지 않음 */}
+            {!isUpdating && <AppContent />}
         </Router>
     );
 }
