@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint */
-const { app, BrowserWindow, globalShortcut } = require('electron');
+const { app, BrowserWindow, globalShortcut, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const dotenv = require('dotenv');
@@ -52,7 +52,7 @@ app.whenReady().then(async () => {
     // (A) 서버 시작
     startLocalServer();
 
-    // (B) 윈도우 생성 (React 앱 실행 - 초기 상태 'startup')
+    // (B) 윈도우 생성
     win = createWindow();
     registerAllIpcHandlers(win);
 
@@ -62,65 +62,77 @@ app.whenReady().then(async () => {
     log.info("[Main] UI 로딩 완료. 시스템 점검 시작.");
 
     // ============================================================
-    // [핵심 수정] 전체 로직을 try-finally로 감싸서 무조건 앱이 켜지게 보장
+    // [핵심] 최후의 안전장치: 10초 뒤에는 무조건 앱을 켭니다.
+    // (로직이 중간에 멈추거나 에러가 나도 키오스크는 켜져야 하니까요)
     // ============================================================
-    let shouldOpenApp = true; // 앱을 열지 말지 결정하는 플래그
+    let safetyTimer = setTimeout(() => {
+        log.warn("[Main] ⚠️ 초기화 시간이 너무 오래 걸려 강제로 앱을 실행합니다.");
+        if (win && !win.isDestroyed()) {
+            win.webContents.send('app-ready');
+        }
+    }, 10000); // 10초 타임아웃
+
+    // 앱 여는 함수 (정상 종료 시 호출)
+    const openApp = () => {
+        if (safetyTimer) clearTimeout(safetyTimer); // 안전장치 해제
+
+        log.info("[Main] 모든 점검 종료. 메인 화면 진입 신호 전송.");
+        startResourceLogging();
+        if (app.isPackaged) initializeUpdater(win);
+
+        if (!app.isPackaged) {
+            globalShortcut.register("F12", () => win.webContents.toggleDevTools());
+        }
+
+        setTimeout(() => {
+            if (!win.isDestroyed()) win.webContents.send('app-ready');
+        }, 500);
+    };
+
+    let shouldOpenApp = true;
 
     try {
         // (D) 앱 업데이트 확인 (Blocking)
         if (app.isPackaged) {
             try {
-                win.webContents.send('update-checking'); // 오버레이: "업데이트 확인 중"
+                win.webContents.send('update-checking');
                 const isUpdating = await checkForUpdatesBlocking(win);
 
-                // 업데이트가 진행 중이면(재시작 대기 중이면) 앱을 열면 안 됨!
+                // 업데이트 설치 중이면 앱을 열지 않음 (재시작 대기)
                 if (isUpdating) {
                     shouldOpenApp = false;
+                    if (safetyTimer) clearTimeout(safetyTimer); // 설치 중엔 타임아웃 해제
                     return;
                 }
             } catch (err) {
-                log.error(`[Main] 업데이트 확인 중 오류 (무시하고 진행): ${err.message}`);
-                // 에러 나면 오버레이를 다시 '초기화 중'으로 돌려놓으라고 신호
-                win.webContents.send('update-not-available');
+                log.error(`[Main] 업데이트 확인 오류: ${err.message}`);
+                win.webContents.send('update-not-available'); // UI 원복
             }
         }
 
         // (E) Python 환경 점검 & 실행
         try {
+            log.info("[Main] Python/AI 엔진 점검 시작...");
             let pyPath;
             if (app.isPackaged) {
-                // 다운로드 필요 시 내부에서 오버레이 이벤트 발생
                 pyPath = await ensurePythonEnvironment(win);
             } else {
+                // 개발 모드 경로
                 pyPath = path.join(app.getPath('userData'), 'python-env', 'kiosk_python.exe');
             }
-            // 파이썬 서버 시작
+
+            // 파이썬 서버 시작 (여기서 에러나도 catch로 넘어감)
             initializePythonServices(win, pyPath);
+            log.info("[Main] Python 서비스 시작 완료.");
 
         } catch (err) {
-            log.error(`[Main] 파이썬/서버 초기화 오류: ${err.message}`);
-            // 에러가 나도 앱은 켜져야 하므로 catch만 하고 넘어감
+            log.error(`[Main] 파이썬 초기화 실패 (앱 실행은 계속함): ${err.message}`);
         }
 
     } finally {
-        // [여기가 해결책!]
-        // 중간에 에러가 나든, 업데이트가 없든, 무슨 일이 있어도 여기는 실행됨.
-        // 단, 업데이트 설치 중(shouldOpenApp === false)일 때는 실행 안 함.
+        // [결론] 업데이트 설치 중만 아니면 무조건 문을 연다!
         if (shouldOpenApp) {
-            log.info("[Main] 모든 점검 종료. 메인 화면 진입 신호 전송.");
-            startResourceLogging();
-            if (app.isPackaged) initializeUpdater(win);
-
-            if (!app.isPackaged) {
-                globalShortcut.register("F12", () => win.webContents.toggleDevTools());
-            }
-
-            // 아주 짧은 텀을 주고 문을 엽니다.
-            setTimeout(() => {
-                if (!win.isDestroyed()) {
-                    win.webContents.send('app-ready');
-                }
-            }, 500);
+            openApp();
         }
     }
 });
