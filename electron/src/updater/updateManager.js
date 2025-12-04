@@ -234,7 +234,10 @@ function runUpdateCheck(win) {
 
             // UI에 완료 메시지를 보여줄 시간(3초)을 준 뒤 재시작
             setTimeout(() => {
-                autoUpdater.quitAndInstall(true, true);
+                // [수정] 첫 번째 인자를 'false'로 바꿔야 설치 화면(마법사)이 보입니다!
+                // true: 사용자 몰래 설치 (화면 안 나옴 -> 키오스크가 멈춘 것처럼 보임)
+                // false: 설치 화면 표시 (추천)
+                autoUpdater.quitAndInstall(false, true);
             }, 3000);
             resolve('UPDATE_FOUND');
         });

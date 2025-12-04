@@ -36,8 +36,8 @@ export default function UpdateOverlay({ status, progress, version }) {
             break;
 
         case 'completed':
-            title = "설치 준비 완료";
-            message = "시스템을 재시작합니다...";
+            title = "업데이트 설치 시작";
+            message = "설치를 위해 잠시 앱이 종료됩니다.\\n화면이 꺼져도 전원을 뽑지 마세요";
             break;
         case 'error':
             title = "오류 발생";
