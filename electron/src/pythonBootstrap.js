@@ -133,11 +133,19 @@ async function ensurePythonEnvironment(win) {
         // 5. 무결성 검증
         if (hashAsset && fs.existsSync(tempHashPath)) {
             log.info('[PythonBootstrap] 무결성 검증 중...');
-            const expectedHash = fs.readFileSync(tempHashPath, 'utf-8').trim();
+
+            // [수정] 파일 전체 내용을 가져옵니다. (Full: ..., Patch: ... 등이 섞여있음)
+            const hashFileContent = fs.readFileSync(tempHashPath, 'utf-8');
+
+            // [수정] 우리가 다운받은 파일의 해시를 계산합니다.
             const actualHash = await calculateFileHash(tempZipPath);
 
-            if (expectedHash.toUpperCase() !== actualHash.toUpperCase()) {
-                throw new Error(`해시 불일치! (기대값: ${expectedHash}, 실제값: ${actualHash})`);
+            log.info(`[PythonBootstrap] 계산된 해시: ${actualHash}`);
+
+            // [핵심 수정] "일치(===)"가 아니라 "포함(includes)"으로 변경!
+            // hash.txt 안에 우리가 계산한 해시값이 들어있기만 하면 통과입니다.
+            if (!hashFileContent.toUpperCase().includes(actualHash.toUpperCase())) {
+                throw new Error(`해시 불일치!\n파일 내 기대값:\n${hashFileContent}\n실제 계산값: ${actualHash}`);
             }
             log.info('[PythonBootstrap] 무결성 검증 통과! ✅');
         }

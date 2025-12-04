@@ -70,7 +70,7 @@ app.whenReady().then(async () => {
         if (win && !win.isDestroyed()) {
             win.webContents.send('app-ready');
         }
-    }, 10000); // 10초 타임아웃
+    }, 60000); // 10초 타임아웃
 
     // 앱 여는 함수 (정상 종료 시 호출)
     const openApp = () => {
