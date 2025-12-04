@@ -73,17 +73,16 @@ app.whenReady().then(async () => {
     // - 배포 버전일 때만 확인
     if (app.isPackaged) {
         try {
-            // 1. 오버레이 문구를 '업데이트 확인 중'으로 변경
-            win.webContents.send('update-checking');
-
-            // 2. 업데이트 확인 (업데이트 있으면 설치 후 자동 종료됨)
+            win.webContents.send('update-checking'); // 오버레이: "업데이트 확인 중"
             const isUpdating = await checkForUpdatesBlocking(win);
 
-            // 업데이트 중이면(재시작 대기 중이면) 더 이상 진행하지 않음
-            if (isUpdating) return;
+            if (isUpdating) return; // 설치 중이면 여기서 종료
 
         } catch (err) {
-            log.error(`[Main] 업데이트 확인 중 오류 (무시하고 진행): ${err.message}`);
+            // [수정] 에러가 나도 멈추지 말고 다음 단계로 넘어가게 처리
+            log.error(`[Main] 업데이트 확인 실패 (무시하고 진행): ${err.message}`);
+            // 에러 났으니 오버레이를 다시 '초기화 중'으로 돌려놓으라고 신호 보냄
+            win.webContents.send('update-not-available');
         }
     }
 

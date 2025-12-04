@@ -23,16 +23,18 @@ export function useAutoUpdate() {
             setUpdateStatus('completed');
             setProgress(100);
         });
+
+        // [수정] 에러 발생 시에도 'startup'으로 복귀시켜서 멈추지 않게 함
         const removeError = window.electronAPI.on('update-error', () => {
             setUpdateStatus('error');
-            // 에러 나면 3초 뒤에 강제로 켬 (혹은 멈춤)
-            setTimeout(() => setUpdateStatus('idle'), 3000);
+            setTimeout(() => setUpdateStatus('startup'), 2000);
         });
 
-        // [중요] "업데이트 없음"이 떠도 바로 앱을 켜지 않음 (파이썬 체크가 남았으므로)
-        // 그냥 로그만 찍고 상태는 유지하거나 'checked' 정도로 둠
+        // [핵심 수정] "업데이트 없음" 신호가 오면 상태를 'startup'으로 되돌려야 함!
+        // 그래야 "확인 중..." 문구가 사라지고 다음 단계(파이썬 등)로 넘어가는 화면이 보임
         const removeNotAvailable = window.electronAPI.on('update-not-available', () => {
-            console.log("앱 업데이트 없음. 다음 단계(파이썬) 대기...");
+            console.log("✅ 앱 업데이트 없음. 다음 단계(파이썬) 대기...");
+            setUpdateStatus('startup'); // <--- 이 줄이 반드시 필요합니다!
         });
 
 
