@@ -7,7 +7,7 @@ const crypto = require('crypto');
 const { log } = require('./logging/logger');
 const dotenv = require('dotenv');
 
-// [설정] 파이썬 배포 태그 (python-env-deploy.yml에서 배포한 버전과 일치해야 함)
+// [설정] 파이썬 배포 태그
 const REQUIRED_ENV_VERSION = 'env-v1.2.0';
 const REPO_OWNER = 'hananetworks';
 const REPO_NAME = 'kiosk-python-runtime';
@@ -116,15 +116,15 @@ async function ensurePythonEnvironment(win) {
         if (!releaseRes.ok) throw new Error(`릴리즈 정보 조회 실패: ${releaseRes.status}`);
 
         const releaseData = await releaseRes.json();
-        const zipAsset = releaseData.assets.find(a => a.name === 'python-env.zip');
+
+        // [수정됨] GitHub에 올라와 있는 실제 파일 이름(python-env-full.zip)으로 변경
+        const zipAsset = releaseData.assets.find(a => a.name === 'python-env-full.zip');
         const hashAsset = releaseData.assets.find(a => a.name === 'hash.txt');
 
-        if (!zipAsset) throw new Error("python-env.zip 파일이 없습니다.");
+        if (!zipAsset) throw new Error("python-env-full.zip 파일이 없습니다.");
         if (!hashAsset) log.warn("hash.txt 파일이 없습니다. (무결성 검증 건너뜀)");
 
         // 4. 파일 다운로드
-        // (다운로드 중 진행 상황을 UI에 알리고 싶다면 downloadWithRetry 함수 내에서 win.webContents.send를 호출하거나
-        //  fetch의 body stream에서 이벤트를 발생시켜야 하지만, 여기서는 단순화함)
         await downloadWithRetry(zipAsset.url, tempZipPath, token);
         if (hashAsset) {
             await downloadWithRetry(hashAsset.url, tempHashPath, token);
