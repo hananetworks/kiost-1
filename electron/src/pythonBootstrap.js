@@ -9,7 +9,7 @@ const dotenv = require('dotenv');
 
 // [중요] GitHub Release에 올라간 태그명과 100% 일치해야 합니다.
 // 스크린샷에는 '1.2.0'으로 보이지만 태그가 'env-v1.2.0'인지 확인하세요.
-const REQUIRED_ENV_VERSION = 'env-v1.2.2';
+const REQUIRED_ENV_VERSION = 'env-v1.2.3';
 const REPO_OWNER = 'hananetworks';
 const REPO_NAME = 'kiosk-python-runtime';
 const MAX_RETRIES = 3;
