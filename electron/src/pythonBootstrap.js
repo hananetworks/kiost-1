@@ -209,16 +209,25 @@ async function ensurePythonEnvironment(win) {
             log.warn(`[PythonBootstrap] ⚠️ 업데이트 실패. 기존 버전(${currentVersion})을 사용합니다.`);
 
             if (win) {
-                // UI에 "통과" 신호를 보내서 부팅 진행
-                win.webContents.send('python-check-pass');
+                // [UI 멈춤 해결 핵심]
+                // 다운로드 중인 상태였다면, 강제로 100%를 찍어주고 -> 완료 신호를 보내서 상태를 풀어줍니다.
+                win.webContents.send('python-download-progress', 100);
+                win.webContents.send('python-download-complete');
+
+                // 1초 뒤에 "점검 통과" 신호를 보내서 메인 화면으로 전환
+                setTimeout(() => {
+                    log.info('[PythonBootstrap] UI에 Fallback 통과 신호 전송');
+                    win.webContents.send('python-check-pass');
+                }, 1000);
             }
+
             // 임시 파일 정리
             try { if(tempZipPath) fs.unlinkSync(tempZipPath); } catch(e) {}
 
             return PYTHON_EXE;
         }
 
-        // 기존 파일도 없으면 진짜 에러
+        // 기존 파일도 없으면 진짜 에러 (이때만 에러 화면 띄움)
         if (win) win.webContents.send('python-download-error', error.message);
         try { if(tempZipPath) fs.unlinkSync(tempZipPath); } catch(e) {}
 
