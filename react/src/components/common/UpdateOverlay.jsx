@@ -56,7 +56,11 @@ export default function UpdateOverlay({ status, progress, version }) {
     }
 
     return (
-        <div className="fixed inset-0 z-[999999] bg-black bg-opacity-95 flex flex-col items-center justify-center text-white touch-none">
+        // [수정] notranslate 클래스와 translate="no" 속성 추가 (구글 번역 방지)
+        <div
+            className="fixed inset-0 z-[999999] bg-black bg-opacity-95 flex flex-col items-center justify-center text-white touch-none notranslate"
+            translate="no"
+        >
             <div className="mb-10">
                 {(status === 'downloading' || status === 'python-downloading' || status === 'checking' || status === 'python-extracting' || status === 'python-checking') ? (
                     <div className="w-24 h-24 border-8 border-gray-600 border-t-blue-500 rounded-full animate-spin"></div>

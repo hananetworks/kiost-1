@@ -8,7 +8,7 @@ const { log } = require('./logging/logger');
 const dotenv = require('dotenv');
 
 // [설정]
-const REQUIRED_ENV_VERSION = 'env-v1.2.3'; // <-- 태그명 확인!
+const REQUIRED_ENV_VERSION = 'env-v1.2.4'; // <-- 태그명 확인!
 const REPO_OWNER = 'hananetworks';
 const REPO_NAME = 'kiosk-python-runtime';
 const MAX_RETRIES = 3;
@@ -18,7 +18,6 @@ const PYTHON_ENV_PATH = path.join(USER_DATA_PATH, 'python-env');
 const VERSION_FILE = path.join(PYTHON_ENV_PATH, 'version.txt');
 const PYTHON_EXE = path.join(PYTHON_ENV_PATH, 'kiosk_python.exe');
 
-// ... (loadEnvToken, calculateFileHash, downloadWithRetry는 기존 유지) ...
 function loadEnvToken() {
     if (process.env.GH_TOKEN) return process.env.GH_TOKEN;
     const envPath = app.isPackaged ? path.join(process.resourcesPath, '.env') : path.join(__dirname, '../../.env');
@@ -29,6 +28,7 @@ function loadEnvToken() {
     return null;
 }
 
+// [Helper] 파일 해시 계산
 function calculateFileHash(filePath) {
     return new Promise((resolve, reject) => {
         const hash = crypto.createHash('sha256');
@@ -37,6 +37,16 @@ function calculateFileHash(filePath) {
         stream.on('data', chunk => hash.update(chunk));
         stream.on('end', () => resolve(hash.digest('hex').toUpperCase()));
     });
+}
+
+// [Helper] 로컬 파일 해시 안전하게 가져오기 (파일 없으면 null)
+async function getLocalHash(filePath) {
+    if (!fs.existsSync(filePath)) return null;
+    try {
+        return await calculateFileHash(filePath);
+    } catch (e) {
+        return null;
+    }
 }
 
 async function downloadWithRetry(url, destPath, token, retries = MAX_RETRIES) {
@@ -64,14 +74,13 @@ async function downloadWithRetry(url, destPath, token, retries = MAX_RETRIES) {
 async function ensurePythonEnvironment(win) {
     if (win) win.webContents.send('python-check-start');
 
-    // 1. 버전 체크
+    // 1. 버전 체크 (버전 파일 내용이 태그와 같으면 패스)
     let currentVersion = null;
     if (fs.existsSync(VERSION_FILE)) {
         currentVersion = fs.readFileSync(VERSION_FILE, 'utf-8').trim();
     }
     log.info(`[PythonBootstrap] 현재: ${currentVersion} / 목표: ${REQUIRED_ENV_VERSION}`);
 
-    // [Pass 조건]
     if (currentVersion === REQUIRED_ENV_VERSION && fs.existsSync(PYTHON_EXE)) {
         log.info('[PythonBootstrap] 최신 버전 보유 중. (검증 생략)');
         if (win) {
@@ -81,26 +90,16 @@ async function ensurePythonEnvironment(win) {
         return PYTHON_EXE;
     }
 
-    // 2. 다운로드 준비
-    log.info('[PythonBootstrap] 새 버전 발견! 다운로드 시작...');
+    // 2. 업데이트 감지 -> 다운로드 전략 수립
+    log.info('[PythonBootstrap] 업데이트 필요! 전략 수립 중...');
     if (win) win.webContents.send('python-download-start');
 
     const token = loadEnvToken();
     if (!token) throw new Error("GH_TOKEN이 없습니다.");
 
-    // [핵심] Patch 사용 여부 판단
-    // 기존 파이썬 폴더가 있고 실행 파일도 있다면 -> Patch 사용 (덮어쓰기)
-    // 아예 없다면 -> Full 사용 (전체 설치)
-    let usePatch = false;
-    if (fs.existsSync(PYTHON_ENV_PATH) && fs.existsSync(PYTHON_EXE)) {
-        usePatch = true;
-        log.info("[PythonBootstrap] 기존 환경 감지됨 -> Patch 버전(가벼운 파일)을 사용합니다. 🚀");
-    } else {
-        log.info("[PythonBootstrap] 기존 환경 없음 -> Full 버전(전체 파일)을 사용합니다. 📦");
-    }
-
-    const tempZipPath = path.join(USER_DATA_PATH, usePatch ? 'temp_patch.zip' : 'temp_full.zip');
-    const tempHashPath = path.join(USER_DATA_PATH, 'temp_hash.txt');
+    // 임시 파일 경로들
+    const manifestPath = path.join(USER_DATA_PATH, 'manifest_remote.json');
+    let downloadTarget = 'Full'; // 기본값은 안전하게 Full (문제 생기면 다 받는 게 상책)
 
     try {
         const apiUrl = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases/tags/${REQUIRED_ENV_VERSION}`;
@@ -108,60 +107,107 @@ async function ensurePythonEnvironment(win) {
         if (!releaseRes.ok) throw new Error(`릴리즈 정보 조회 실패: ${releaseRes.status}`);
         const releaseData = await releaseRes.json();
 
-        // [핵심] 파일 선택 로직
-        const targetFileName = usePatch ? 'python-env-patch.zip' : 'python-env-full.zip';
+        // 3. Manifest 다운로드 및 분석 (스마트 스위칭)
+        const manifestAsset = releaseData.assets.find(a => a.name === 'manifest.json');
+
+        if (manifestAsset) {
+            log.info('[PythonBootstrap] Manifest 다운로드 및 분석...');
+            await downloadWithRetry(manifestAsset.url, manifestPath, token);
+
+            const remoteManifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+            const criticalHashes = remoteManifest.criticalHashes || {};
+
+            let isCriticalChanged = false;
+
+            // 기존 환경이 아예 없으면 -> 무조건 Full
+            if (!fs.existsSync(PYTHON_ENV_PATH)) {
+                log.info(' -> 기존 환경 없음 (Full 다운로드)');
+                isCriticalChanged = true;
+            } else {
+                // 중요 파일들(Torch 등) 하나씩 비교
+                for (const [relPath, remoteHash] of Object.entries(criticalHashes)) {
+                    // relPath 예시: "Lib/site-packages/torch/version.py"
+                    const localFilePath = path.join(PYTHON_ENV_PATH, relPath);
+                    const localHash = await getLocalHash(localFilePath);
+
+                    // 로컬 파일이 없거나, 해시가 다르면 -> 무거운 게 바뀐 것임
+                    if (!localHash || localHash.toUpperCase() !== remoteHash.toUpperCase()) {
+                        log.warn(` -> 변경 감지됨(Critical): ${relPath}`);
+                        isCriticalChanged = true;
+                        break;
+                    }
+                }
+            }
+
+            if (isCriticalChanged) {
+                log.info('[결정] 중요 라이브러리 변경됨 -> 📦 Full 버전 다운로드');
+                downloadTarget = 'Full';
+            } else {
+                log.info('[결정] 로직만 변경됨 -> 🚀 Patch 버전 다운로드 (고속)');
+                downloadTarget = 'Patch';
+            }
+        } else {
+            log.warn('[PythonBootstrap] Manifest 없음 -> 안전하게 Full 버전 다운로드');
+        }
+
+        // 4. 실제 파일 다운로드 (Full 또는 Patch)
+        const targetFileName = (downloadTarget === 'Patch') ? 'python-env-patch.zip' : 'python-env-full.zip';
         const zipAsset = releaseData.assets.find(a => a.name === targetFileName);
         const hashAsset = releaseData.assets.find(a => a.name === 'hash.txt');
 
-        if (!zipAsset) throw new Error(`${targetFileName} 파일을 찾을 수 없습니다.`);
+        if (!zipAsset) throw new Error(`${targetFileName}을 찾을 수 없습니다.`);
 
-        // 3. 파일 다운로드
+        const tempZipPath = path.join(USER_DATA_PATH, `temp_${downloadTarget}.zip`);
+        const tempHashPath = path.join(USER_DATA_PATH, 'temp_hash.txt');
+
         await downloadWithRetry(zipAsset.url, tempZipPath, token);
         if (hashAsset) await downloadWithRetry(hashAsset.url, tempHashPath, token);
 
-        // 4. 무결성 검증
+        // 5. 무결성 검증 (Hash Check)
         if (hashAsset && fs.existsSync(tempHashPath)) {
-            log.info('[PythonBootstrap] 무결성 검증 중...');
+            log.info('[PythonBootstrap] 다운로드 파일 무결성 검증...');
             const hashFileContent = fs.readFileSync(tempHashPath, 'utf-8');
             const actualHash = await calculateFileHash(tempZipPath);
 
-            // hash.txt에는 "Full: ABC..." 와 "Patch: DEF..." 가 들어있음
-            // 우리가 받은 파일의 해시가 포함되어 있는지 확인
+            // hash.txt 안에 "Full: ABC..." 형식으로 들어있음
             if (!hashFileContent.toUpperCase().includes(actualHash.toUpperCase())) {
-                throw new Error(`해시 불일치! 파일 변조 또는 다운로드 오류.`);
+                throw new Error(`다운로드 파일 해시 불일치! (파일 깨짐 또는 변조)`);
             }
             log.info('[PythonBootstrap] 무결성 검증 통과! ✅');
         }
 
-        // 5. 설치 (압축 해제)
+        // 6. 설치 (압축 해제)
         if (win) win.webContents.send('python-extracting');
 
-        // [중요] Full 버전일 때만 기존 폴더 삭제 (클린 설치)
-        // Patch 버전일 때는 삭제하지 않고 덮어씌움 (Overwrite)
-        if (!usePatch && fs.existsSync(PYTHON_ENV_PATH)) {
-            log.info("[PythonBootstrap] Full 설치를 위해 기존 폴더 삭제 중...");
+        // Full 버전이면 기존 폴더 삭제 (클린 설치)
+        if (downloadTarget === 'Full' && fs.existsSync(PYTHON_ENV_PATH)) {
+            log.info("[PythonBootstrap] Full 설치를 위해 기존 폴더 삭제...");
             try { fs.rmSync(PYTHON_ENV_PATH, { recursive: true, force: true }); } catch(e) {}
         }
 
-        log.info(`[PythonBootstrap] 압축 해제 중... (${usePatch ? '덮어쓰기' : '새로 설치'})`);
+        log.info(`[PythonBootstrap] 압축 해제 중... (${downloadTarget} 모드)`);
         const zip = new AdmZip(tempZipPath);
-        zip.extractAllTo(USER_DATA_PATH, true); // true = overwrite 허용
+        zip.extractAllTo(USER_DATA_PATH, true); // overwrite 허용
 
         // 버전 기록 업데이트
         fs.writeFileSync(VERSION_FILE, REQUIRED_ENV_VERSION);
 
-        // 청소
+        // 뒷정리
         try { fs.unlinkSync(tempZipPath); } catch(e) {}
         try { fs.unlinkSync(tempHashPath); } catch(e) {}
+        try { fs.unlinkSync(manifestPath); } catch(e) {}
 
-        log.info('[PythonBootstrap] 설치 완료!');
+        log.info('[PythonBootstrap] 모든 설치 완료!');
         if (win) win.webContents.send('python-download-complete');
         return PYTHON_EXE;
 
     } catch (error) {
         log.error(`[PythonBootstrap Error] ${error.message}`);
         if (win) win.webContents.send('python-download-error', error.message);
-        try { fs.unlinkSync(tempZipPath); } catch(e) {}
+
+        // 에러 시 임시 파일 정리
+        try { fs.unlinkSync(path.join(USER_DATA_PATH, `temp_${downloadTarget}.zip`)); } catch(e) {}
+
         throw error;
     }
 }
