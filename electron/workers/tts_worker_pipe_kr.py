@@ -3,7 +3,8 @@
 로컬 IPC 워커 - Windows Named Pipe (한국어 TTS)
 - 파이프명: \\.\pipe\melo_tts
 - MeCab 형태소 분석기 경로 동적 설정
-- [Update] SimpleAudio 제거 -> SoundDevice 적용 (고속 재생)
+- [Update] SimpleAudio 제거 -> SoundDevice 적용
+- [Update] Eunjeon 제거 -> mecab-ko-dic 단독 사용
 """
 
 import os, sys, re, time, json, queue, threading, tempfile, shutil, uuid
@@ -27,11 +28,12 @@ try:
     if IS_PACKAGED:
         if len(sys.argv) > 2:
             BASE_PATH = sys.argv[2]
+            # [수정] Eunjeon 관련 로직 제거하고 표준 Mecab 경로만 설정
             mecab_dic_path = os.path.join(BASE_PATH, 'mecab_ko_dic')
-            eunjeon_dic_path = os.path.join(mecab_dic_path, 'dicdir')
-
-            # 은전한닢 패치 로직 생략 (기존과 동일하다고 가정하거나 필요시 유지)
-            # 여기서는 파일 경로만 잡습니다.
+            print(f"[INIT] Configured MeCab path: {mecab_dic_path}", flush=True)
+            # MeloTTS는 내부적으로 mecab-python3를 쓰며, mecab_ko_dic이 설치되어 있으면 자동으로 찾습니다.
+            # 만약 환경변수 설정이 필요하다면 여기에 추가합니다.
+            os.environ["MECAB_KO_DIC_PATH"] = mecab_dic_path
         else:
             sys.exit(1)
 except Exception as e:
