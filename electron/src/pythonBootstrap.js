@@ -6,27 +6,34 @@ const fetch = require('node-fetch');
 const crypto = require('crypto');
 const { log } = require('./logging/logger');
 const dotenv = require('dotenv');
-const os = require('os'); // os 모듈 추가
+const os = require('os');
+const { execSync } = require('child_process'); // [추가] 외부 명령어(hpatchz) 실행용
 
 // [설정]
-const REQUIRED_ENV_VERSION = 'env-v1.2.8';
+const REQUIRED_ENV_VERSION = 'env-v1.3.0'; // 목표 버전
 const REPO_OWNER = 'hananetworks';
 const REPO_NAME = 'kiosk-python-runtime';
 const MAX_RETRIES = 3;
 
 const USER_DATA_PATH = app.getPath('userData');
 const LOCAL_APP_DATA = process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
-const APP_LOCAL_PATH = path.join(LOCAL_APP_DATA, 'MAXEE_promotional'); // 앱 이름 폴더
+const APP_LOCAL_PATH = path.join(LOCAL_APP_DATA, 'MAXEE_promotional'); // 앱 루트
+const UPDATE_CACHE_PATH = path.join(APP_LOCAL_PATH, 'updates'); // [추가] 업데이트 파일 보관소
 
-// 폴더가 없으면 에러 날 수 있으니 미리 생성해주는 센스
-if (!fs.existsSync(APP_LOCAL_PATH)) {
-    try { fs.mkdirSync(APP_LOCAL_PATH, { recursive: true }); } catch(e) {}
-}
+// 필요한 폴더 생성
+[APP_LOCAL_PATH, UPDATE_CACHE_PATH].forEach(dir => {
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+});
 
-// 3. 파이썬 경로를 Local 쪽으로 변경
+// 경로 설정
 const PYTHON_ENV_PATH = path.join(APP_LOCAL_PATH, 'python-env');
 const VERSION_FILE = path.join(PYTHON_ENV_PATH, 'version.txt');
 const PYTHON_EXE = path.join(PYTHON_ENV_PATH, 'kiosk_python.exe');
+
+// [핵심] 로컬에 보관된 '직전 버전'의 원본 Zip 파일 경로
+const CACHED_FULL_ZIP = path.join(UPDATE_CACHE_PATH, 'python-env-full.zip');
+// [핵심] 패치 도구 경로
+const HPATCH_TOOL = path.join(UPDATE_CACHE_PATH, 'hpatchz.exe');
 
 function loadEnvToken() {
     if (process.env.GH_TOKEN) return process.env.GH_TOKEN;
@@ -46,11 +53,6 @@ function calculateFileHash(filePath) {
         stream.on('data', chunk => hash.update(chunk));
         stream.on('end', () => resolve(hash.digest('hex').toUpperCase()));
     });
-}
-
-async function getLocalHash(filePath) {
-    if (!fs.existsSync(filePath)) return null;
-    try { return await calculateFileHash(filePath); } catch (e) { return null; }
 }
 
 async function downloadWithRetry(url, destPath, token, win, retries = MAX_RETRIES) {
@@ -116,138 +118,142 @@ async function ensurePythonEnvironment(win) {
         return PYTHON_EXE;
     }
 
-    // 2. 업데이트 진행
+    // 2. 업데이트 로직 시작
     log.info('[PythonBootstrap] 업데이트 시작...');
     if (win) win.webContents.send('python-download-start');
 
-    // 트래픽 분산을 위한 랜덤 딜레이 (0~5초)
-    const randomDelay = Math.floor(Math.random() * 5000);
-    if(randomDelay > 1000) await new Promise(r => setTimeout(r, randomDelay));
-
     const token = loadEnvToken();
-    const manifestPath = path.join(USER_DATA_PATH, 'manifest_remote.json');
-    let downloadTarget = 'Full';
-    let tempZipPath = ''; // try 블록 밖에서 선언
+    let finalZipPath = ''; // 최종적으로 압축 풀 Zip 파일 경로
 
     try {
         if (!token) throw new Error("GH_TOKEN이 없습니다.");
 
+        // 릴리즈 정보 가져오기
         const apiUrl = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases/tags/${REQUIRED_ENV_VERSION}`;
         const releaseRes = await fetch(apiUrl, { headers: { 'Authorization': `Bearer ${token}` } });
-
-        // 404 등 오류 발생 시 throw -> catch 블록으로 이동
         if (!releaseRes.ok) throw new Error(`릴리즈 정보 조회 실패: ${releaseRes.status}`);
-
         const releaseData = await releaseRes.json();
 
-        // --- Smart Switching Logic ---
-        const manifestAsset = releaseData.assets.find(a => a.name === 'manifest.json');
-        if (manifestAsset) {
-            log.info('[PythonBootstrap] Manifest 분석...');
-            await downloadWithRetry(manifestAsset.url, manifestPath, token, null);
+        // 에셋 찾기
+        const fullAsset = releaseData.assets.find(a => a.name === 'python-env-full.zip');
+        const patchAsset = releaseData.assets.find(a => a.name === 'patch.hdiff');
+        const toolAsset = releaseData.assets.find(a => a.name === 'hpatchz.exe');
 
-            const remoteManifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
-            const criticalHashes = remoteManifest.criticalHashes || {};
-            let isCriticalChanged = false;
+        if (!fullAsset) throw new Error('Release에 python-env-full.zip이 없습니다.');
 
-            if (!fs.existsSync(PYTHON_ENV_PATH)) {
-                isCriticalChanged = true;
+        // -----------------------------------------------------------
+        // [A] 패치 도구(hpatchz.exe) 준비
+        // -----------------------------------------------------------
+        if (!fs.existsSync(HPATCH_TOOL)) {
+            if (toolAsset) {
+                log.info('hpatchz.exe 다운로드 중...');
+                await downloadWithRetry(toolAsset.url, HPATCH_TOOL, token, null);
             } else {
-                for (const [relPath, remoteHash] of Object.entries(criticalHashes)) {
-                    const localFilePath = path.join(PYTHON_ENV_PATH, relPath);
-                    const localHash = await getLocalHash(localFilePath);
-                    if (!localHash || localHash.toUpperCase() !== remoteHash.toUpperCase()) {
-                        isCriticalChanged = true;
-                        break;
-                    }
-                }
-            }
-            downloadTarget = isCriticalChanged ? 'Full' : 'Patch';
-            log.info(`[결정] 다운로드 모드: ${downloadTarget}`);
-        } else {
-            log.warn('[PythonBootstrap] Manifest 없음 -> Full 모드');
-        }
-
-        // --- File Download ---
-        const targetFileName = (downloadTarget === 'Patch') ? 'python-env-patch.zip' : 'python-env-full.zip';
-        const zipAsset = releaseData.assets.find(a => a.name === targetFileName);
-        const hashAsset = releaseData.assets.find(a => a.name === 'hash.txt');
-
-        if (!zipAsset) throw new Error(`${targetFileName} 없음`);
-
-        tempZipPath = path.join(APP_LOCAL_PATH, `temp_${downloadTarget}.zip`);
-        const tempHashPath = path.join(APP_LOCAL_PATH, 'temp_hash.txt');
-
-        await downloadWithRetry(zipAsset.url, tempZipPath, token, win);
-        if (hashAsset) await downloadWithRetry(hashAsset.url, tempHashPath, token, null);
-
-        // --- Integrity Check ---
-        if (hashAsset && fs.existsSync(tempHashPath)) {
-            const hashFileContent = fs.readFileSync(tempHashPath, 'utf-8');
-            const actualHash = await calculateFileHash(tempZipPath);
-            if (!hashFileContent.toUpperCase().includes(actualHash.toUpperCase())) {
-                throw new Error(`파일 해시 불일치 (변조 또는 깨짐)`);
+                log.warn('hpatchz.exe를 서버에서 찾을 수 없습니다. (패치 불가)');
             }
         }
 
-        // --- Extract ---
+        // -----------------------------------------------------------
+        // [B] 다운로드 모드 결정 (Diff Patch vs Full Download)
+        // -----------------------------------------------------------
+        let usePatch = false;
+
+        // 조건: 패치 파일 존재 + 로컬에 구버전 원본 존재 + 패치 도구 존재
+        if (patchAsset && fs.existsSync(CACHED_FULL_ZIP) && fs.existsSync(HPATCH_TOOL)) {
+            usePatch = true;
+        }
+
+        if (usePatch) {
+            log.info(`🚀 [Diff Patch Mode] 용량 절약 모드로 진행합니다.`);
+            const patchPath = path.join(UPDATE_CACHE_PATH, 'patch.hdiff');
+            const newZipPath = path.join(UPDATE_CACHE_PATH, `temp_new_${Date.now()}.zip`);
+
+            try {
+                // 1. 패치 파일 다운로드 (15MB)
+                await downloadWithRetry(patchAsset.url, patchPath, token, win);
+
+                // 2. 병합 실행 (Old + Patch = New)
+                // hpatchz.exe [old] [diff] [new]
+                if (win) win.webContents.send('python-extracting'); // UI 멘트: "패치 적용 중..."
+                log.info('패치 병합(Merge) 시작...');
+
+                execSync(`"${HPATCH_TOOL}" "${CACHED_FULL_ZIP}" "${patchPath}" "${newZipPath}"`);
+
+                log.info('패치 병합 성공!');
+                finalZipPath = newZipPath;
+
+                // 패치 파일은 이제 필요 없으니 삭제
+                fs.unlinkSync(patchPath);
+
+            } catch (patchErr) {
+                log.error(`❌ 패치 적용 실패 (Full 모드로 전환): ${patchErr.message}`);
+                usePatch = false;
+                // 임시 파일 정리
+                if (fs.existsSync(newZipPath)) fs.unlinkSync(newZipPath);
+                if (fs.existsSync(patchPath)) fs.unlinkSync(patchPath);
+            }
+        }
+
+        // -----------------------------------------------------------
+        // [C] Full Download (패치 불가 or 실패 시)
+        // -----------------------------------------------------------
+        if (!usePatch) {
+            log.info(`📦 [Full Download Mode] 전체 파일을 다운로드합니다.`);
+            finalZipPath = path.join(UPDATE_CACHE_PATH, `temp_full_${Date.now()}.zip`);
+            await downloadWithRetry(fullAsset.url, finalZipPath, token, win);
+        }
+
+        // -----------------------------------------------------------
+        // [D] 압축 해제 및 교체
+        // -----------------------------------------------------------
         if (win) win.webContents.send('python-extracting');
-        if (downloadTarget === 'Full' && fs.existsSync(PYTHON_ENV_PATH)) {
-            try { fs.rmSync(PYTHON_ENV_PATH, { recursive: true, force: true }); } catch(e) {}
+
+        // 기존 환경 폴더 삭제
+        if (fs.existsSync(PYTHON_ENV_PATH)) {
+            try { fs.rmSync(PYTHON_ENV_PATH, { recursive: true, force: true }); } catch(e) {
+                log.warn('기존 폴더 삭제 중 경미한 오류(무시됨): ' + e.message);
+            }
         }
 
-        const zip = new AdmZip(tempZipPath);
-
-        // [수정 완료] Roaming이 아니라 Local 폴더에 압축 해제
-        zip.extractAllTo(APP_LOCAL_PATH, true);
-
-        // 혹시 모르니 폴더가 없으면 만들고 파일 쓰기
-        if (!fs.existsSync(PYTHON_ENV_PATH)) {
-            fs.mkdirSync(PYTHON_ENV_PATH, { recursive: true });
-        }
+        // 압축 해제
+        const zip = new AdmZip(finalZipPath);
+        zip.extractAllTo(APP_LOCAL_PATH, true); // python-env 폴더가 생성됨
 
         // 버전 파일 갱신
         fs.writeFileSync(VERSION_FILE, REQUIRED_ENV_VERSION);
 
-        // 정리
-        try { fs.unlinkSync(tempZipPath); } catch(e) {}
-        try { fs.unlinkSync(tempHashPath); } catch(e) {}
-        try { fs.unlinkSync(manifestPath); } catch(e) {}
+        // -----------------------------------------------------------
+        // [E] 다음 업데이트를 위한 캐시 갱신 (중요!)
+        // -----------------------------------------------------------
+        // 방금 받은(또는 만든) Zip 파일을 'python-env-full.zip'으로 이름 바꿔서 보관
+        // 그래야 다음 버전에 Patch 모드를 쓸 수 있음.
+        try {
+            if (fs.existsSync(CACHED_FULL_ZIP)) fs.unlinkSync(CACHED_FULL_ZIP);
+            fs.renameSync(finalZipPath, CACHED_FULL_ZIP);
+            log.info('업데이트 캐시 갱신 완료 (다음 패치 준비 완료)');
+        } catch (e) {
+            log.warn('캐시 파일 갱신 실패(다음엔 Full 다운로드 됨): ' + e.message);
+        }
 
-        log.info('[PythonBootstrap] 업데이트 완료!');
+        log.info('[PythonBootstrap] 모든 업데이트 완료!');
         if (win) win.webContents.send('python-download-complete');
         return PYTHON_EXE;
 
     } catch (error) {
-        log.error(`[PythonBootstrap Error] 업데이트 실패: ${error.message}`);
+        log.error(`[PythonBootstrap Error] ${error.message}`);
 
-        // [Fallback Logic] 기존 파일이 있다면 그걸로 실행
+        // [Fallback] 실패 시 기존 버전이라도 실행 시도
         if (fs.existsSync(PYTHON_EXE)) {
-            log.warn(`[PythonBootstrap] ⚠️ 업데이트 실패. 기존 버전(${currentVersion})을 사용합니다.`);
-
+            log.warn(`⚠️ 업데이트 실패. 기존 버전을 사용합니다.`);
             if (win) {
-                // [UI 멈춤 해결 핵심]
-                // 다운로드 중인 상태였다면, 강제로 100%를 찍어주고 -> 완료 신호를 보내서 상태를 풀어줍니다.
                 win.webContents.send('python-download-progress', 100);
                 win.webContents.send('python-download-complete');
-
-                // 1초 뒤에 "점검 통과" 신호를 보내서 메인 화면으로 전환
-                setTimeout(() => {
-                    log.info('[PythonBootstrap] UI에 Fallback 통과 신호 전송');
-                    win.webContents.send('python-check-pass');
-                }, 1000);
+                setTimeout(() => win.webContents.send('python-check-pass'), 1000);
             }
-
-            // 임시 파일 정리
-            try { if(tempZipPath) fs.unlinkSync(tempZipPath); } catch(e) {}
-
             return PYTHON_EXE;
         }
 
-        // 기존 파일도 없으면 진짜 에러 (이때만 에러 화면 띄움)
         if (win) win.webContents.send('python-download-error', error.message);
-        try { if(tempZipPath) fs.unlinkSync(tempZipPath); } catch(e) {}
-
         throw error;
     }
 }

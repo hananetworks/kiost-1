@@ -114,37 +114,57 @@ def pick_speaker_id(tts):
         if "EN-US" in str(k).upper(): return int(v)
     return int(next(iter(spk2id.values()), 0))
 
-def split_chunks(text: str, first_len=60, rest_len=300):
+def split_chunks(text: str, first_len=50, rest_len=250):
+    """
+    [수정] 영어 문장도 끊김 방지를 위해 '계단식 증가(Ramp-up)' 적용.
+    50자 -> 100자 -> 150자... 순서로 늘려가며 버퍼링을 없앱니다.
+    """
     chunks = []
     cur_text = text.strip()
-    target_len = first_len
+
+    # 1. 가변 목표 길이 (초기값은 짧게)
+    current_target_len = first_len
 
     while cur_text:
-        if len(cur_text) <= target_len:
+        # 남은 텍스트가 목표보다 짧으면 통째로 처리
+        if len(cur_text) <= current_target_len:
             if cur_text: chunks.append(cur_text)
             break
 
-        candidate = cur_text[:target_len]
-        min_threshold = int(target_len * 0.4)
+        candidate = cur_text[:current_target_len]
+        min_threshold = int(current_target_len * 0.4)
         split_idx = -1
 
+        # --- 영어 전용 자르기 로직 ---
+
+        # [1순위] 문장 종결 (. ? ! : 개행)
+        # 영어는 콜론(:)도 중요한 휴지부입니다.
         match = re.search(r'[.?!:\n](?=[^.?!:\n]*$)', candidate)
         if match and match.end() > min_threshold: split_idx = match.end()
 
+        # [2순위] 중간 쉼표 (, ;)
         if split_idx == -1:
             match = re.search(r'[,;](?=[^,;]*$)', candidate)
             if match and match.end() > min_threshold: split_idx = match.end()
 
+        # [3순위] 공백 (단어 단위 절단)
         if split_idx == -1:
             last_space = candidate.rfind(' ')
             if last_space > min_threshold: split_idx = last_space
 
-        if split_idx == -1: split_idx = target_len
+        # [4순위] 강제 절단
+        if split_idx == -1: split_idx = current_target_len
 
+        # --- 조각 저장 ---
         chunk = cur_text[:split_idx].strip()
         if chunk: chunks.append(chunk)
+
         cur_text = cur_text[split_idx:].strip()
-        target_len = rest_len
+
+        # ▼▼▼ [핵심] 다음 청크 길이를 서서히 늘림 (급발진 방지) ▼▼▼
+        # 이렇게 해야 AI가 생성하는 시간을 벌어줄 수 있습니다.
+        if current_target_len < rest_len:
+            current_target_len = min(rest_len, current_target_len + 50)
 
     return chunks
 
@@ -219,46 +239,103 @@ def synth_worker(tts, spk_id, in_q, play_q, stop_evt, interrupt_evt, tmpdir, tar
     print(f"[SYNTH-{wid}] Worker stopped.", flush=True)
 
 def play_worker(play_q, stop_evt, interrupt_evt, signal_q):
-    """[수정] SoundDevice 기반 재생 워커"""
-    print("[PLAY] Worker started (SoundDevice).", flush=True)
+    """
+    [Gapless Streaming + Instant Stop]
+    OutputStream을 쓰되, 멈춤 신호에 즉각 반응하도록 데이터를 잘게 쪼개서 씁니다.
+    """
+    print("[PLAY] Worker started (Responsive Stream).", flush=True)
+
+    # 44100Hz (영어는 24000으로 수정 필요), float32, 블록사이즈 최적화
+    # 영어 파일 수정 시에는 아래 44100을 24000으로 바꾸세요!
+    current_sr = 24000
+    stream = sd.OutputStream(samplerate=current_sr, channels=1, dtype='float32', blocksize=1024)
+    stream.start()
+
     start_signal_sent = False
 
-    while not stop_evt.is_set():
-        # 중단(Stop) 요청 처리
-        if interrupt_evt.is_set():
-            sd.stop() # [핵심] 즉시 오디오 중단
-            while not play_q.empty(): play_q.get_nowait()
-            signal_q.put(b"DONE\n")
-            interrupt_evt.clear()
-            start_signal_sent = False
-            time.sleep(0.02)
-            continue
+    # 한 번에 스피커로 밀어넣을 조각 크기 (프레임 수)
+    # 2048 프레임은 44.1kHz 기준 약 0.046초 -> 0.05초마다 멈춤 체크함 (반응 속도 매우 빠름)
+    WRITE_CHUNK_SIZE = 2048
 
-        try:
-            # 큐에서 (sr, numpy_float_array) 가져오기
-            item = play_q.get(timeout=0.05)
-            if item is None: break
-            sr, audio_data = item
-
-            if not start_signal_sent:
-                signal_q.put(b"START\n")
-                start_signal_sent = True
-
-            # [핵심] 메모리 데이터 직접 재생
-            sd.play(audio_data, sr)
-            sd.wait() # 재생 끝날 때까지 대기 (외부에서 sd.stop() 호출 시 즉시 풀림)
-
-            if not interrupt_evt.is_set() and play_q.empty():
+    try:
+        while not stop_evt.is_set():
+            # [1] 대기 상태에서 중단 체크
+            if interrupt_evt.is_set():
+                # 즉시 정지 로직 실행
+                stream.stop()
+                while not play_q.empty():
+                    try: play_q.get_nowait()
+                    except queue.Empty: break
                 signal_q.put(b"DONE\n")
+                interrupt_evt.clear()
                 start_signal_sent = False
+                stream.start() # 재시작
+                time.sleep(0.01)
+                continue
 
-        except queue.Empty:
-            continue
-        except Exception as e:
-            print(f"[PLAY] Error: {e}", flush=True)
+            try:
+                item = play_q.get(timeout=0.02)
+                if item is None: break
 
-    sd.stop()
-    print("[PLAY] Worker stopped.", flush=True)
+                target_sr, audio_data = item
+
+                # 샘플레이트 변경 시 스트림 재설정
+                if target_sr != current_sr:
+                    current_sr = target_sr
+                    stream.stop()
+                    stream.close()
+                    stream = sd.OutputStream(samplerate=current_sr, channels=1, dtype='float32', blocksize=1024)
+                    stream.start()
+
+                if not start_signal_sent:
+                    signal_q.put(b"START\n")
+                    start_signal_sent = True
+
+                # ▼▼▼ [핵심 수정] 데이터를 잘게 쪼개서 쓰며 감시하기 ▼▼▼
+                total_len = len(audio_data)
+                current_pos = 0
+
+                stop_detected = False
+
+                while current_pos < total_len:
+                    # 1. 도중에 멈춤 신호가 왔는지 체크
+                    if interrupt_evt.is_set():
+                        stop_detected = True
+                        break # 내부 루프 탈출 -> 즉시 멈춤 로직으로 이동
+
+                    # 2. 작은 조각만큼만 재생
+                    end_pos = min(current_pos + WRITE_CHUNK_SIZE, total_len)
+                    chunk = audio_data[current_pos:end_pos]
+                    stream.write(chunk) # 0.05초만큼만 블로킹됨
+                    current_pos = end_pos
+
+                # 멈춤 신호가 감지되었다면, 위쪽의 메인 루프 [1]번 로직이 처리하도록 continue
+                if stop_detected:
+                    continue
+                    # ▲▲▲ [수정 끝] ▲▲▲
+
+                # 큐가 비었고 재생이 끝났다면 완료 신호
+                if play_q.empty():
+                    signal_q.put(b"DONE\n")
+                    start_signal_sent = False
+
+            except queue.Empty:
+                continue
+            except Exception as e:
+                print(f"[PLAY] Error: {e}", flush=True)
+                try:
+                    stream.stop()
+                    stream.close()
+                    stream = sd.OutputStream(samplerate=current_sr, channels=1, dtype='float32', blocksize=1024)
+                    stream.start()
+                except: pass
+
+    finally:
+        try:
+            stream.stop()
+            stream.close()
+        except: pass
+        print("[PLAY] Worker stopped.", flush=True)
 
 def run_pipe_loop(in_q, stop_evt, interrupt_evt, signal_q):
     print("[PIPE] Worker started with Smart Buffering (EN).", flush=True)

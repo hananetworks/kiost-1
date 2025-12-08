@@ -117,8 +117,12 @@ app.whenReady().then(async () => {
             if (app.isPackaged) {
                 pyPath = await ensurePythonEnvironment(win);
             } else {
-                // 개발 모드 경로
-                pyPath = path.join(app.getPath('userData'), 'python-env', 'kiosk_python.exe');
+
+                const LOCAL_APP_DATA = process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
+                // 주의: 폴더명 'MAXEE_promotional'은 pythonBootstrap.js와 글자 하나라도 틀리면 안 됩니다.
+                const APP_LOCAL_PATH = path.join(LOCAL_APP_DATA, 'MAXEE_promotional');
+
+                pyPath = path.join(APP_LOCAL_PATH, 'python-env', 'kiosk_python.exe');
             }
 
             // 파이썬 서버 시작 (여기서 에러나도 catch로 넘어감)
