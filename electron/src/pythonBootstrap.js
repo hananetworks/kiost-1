@@ -8,7 +8,7 @@ const { log } = require('./logging/logger');
 const dotenv = require('dotenv');
 
 // [설정]
-const REQUIRED_ENV_VERSION = 'env-v1.2.5';
+const REQUIRED_ENV_VERSION = 'env-v1.2.6';
 const REPO_OWNER = 'hananetworks';
 const REPO_NAME = 'kiosk-python-runtime';
 const MAX_RETRIES = 3;
