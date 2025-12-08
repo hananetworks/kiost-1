@@ -10,7 +10,7 @@ const os = require('os');
 const { execSync } = require('child_process'); // [추가] 외부 명령어(hpatchz) 실행용
 
 // [설정]
-const REQUIRED_ENV_VERSION = 'env-v1.3.0'; // 목표 버전
+const REQUIRED_ENV_VERSION = 'env-v1.3.4'; // 목표 버전
 const REPO_OWNER = 'hananetworks';
 const REPO_NAME = 'kiosk-python-runtime';
 const MAX_RETRIES = 3;
