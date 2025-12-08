@@ -6,6 +6,7 @@ const fetch = require('node-fetch');
 const crypto = require('crypto');
 const { log } = require('./logging/logger');
 const dotenv = require('dotenv');
+const os = require('os'); // os 모듈 추가
 
 // [설정]
 const REQUIRED_ENV_VERSION = 'env-v1.2.8';
@@ -126,7 +127,7 @@ async function ensurePythonEnvironment(win) {
     const token = loadEnvToken();
     const manifestPath = path.join(USER_DATA_PATH, 'manifest_remote.json');
     let downloadTarget = 'Full';
-    let tempZipPath = '';
+    let tempZipPath = ''; // try 블록 밖에서 선언
 
     try {
         if (!token) throw new Error("GH_TOKEN이 없습니다.");
@@ -174,7 +175,7 @@ async function ensurePythonEnvironment(win) {
 
         if (!zipAsset) throw new Error(`${targetFileName} 없음`);
 
-        const tempZipPath = path.join(APP_LOCAL_PATH, `temp_${downloadTarget}.zip`);
+        tempZipPath = path.join(APP_LOCAL_PATH, `temp_${downloadTarget}.zip`);
         const tempHashPath = path.join(APP_LOCAL_PATH, 'temp_hash.txt');
 
         await downloadWithRetry(zipAsset.url, tempZipPath, token, win);
@@ -196,7 +197,14 @@ async function ensurePythonEnvironment(win) {
         }
 
         const zip = new AdmZip(tempZipPath);
-        zip.extractAllTo(USER_DATA_PATH, true);
+
+        // [수정 완료] Roaming이 아니라 Local 폴더에 압축 해제
+        zip.extractAllTo(APP_LOCAL_PATH, true);
+
+        // 혹시 모르니 폴더가 없으면 만들고 파일 쓰기
+        if (!fs.existsSync(PYTHON_ENV_PATH)) {
+            fs.mkdirSync(PYTHON_ENV_PATH, { recursive: true });
+        }
 
         // 버전 파일 갱신
         fs.writeFileSync(VERSION_FILE, REQUIRED_ENV_VERSION);
