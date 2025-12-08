@@ -4,6 +4,7 @@
 - 파이프명: \\.\pipe\melo_tts_en
 - main.js로부터 실행 인수를 받아 패키징 환경을 설정합니다.
 - TTS 결과를 캐싱하여 반복적인 요청에 빠르게 응답합니다.
+- [Update] SimpleAudio 제거 -> SoundDevice 적용 (고속 재생)
 """
 
 import os, sys, re, time, json, queue, threading, tempfile, shutil, uuid
@@ -14,22 +15,19 @@ from melo.api import TTS
 
 import warnings
 import logging
-warnings.filterwarnings("ignore")  # pkg_resources, FutureWarning 등 모든 잡다한 경고 무시
-logging.getLogger("transformers").setLevel(logging.ERROR) # Transformers 내부 로그 끄기
+warnings.filterwarnings("ignore")
+logging.getLogger("transformers").setLevel(logging.ERROR)
 
 # ==================================================================================
-# ✅ [추가] NLTK 데이터 강제 확보 로직 (파일 깨짐/누락 방지)
+# ✅ NLTK 데이터 강제 확보 로직
 # ==================================================================================
 def ensure_nltk_resources():
-    """영어 TTS(g2p_en) 구동에 필수적인 NLTK 데이터를 확인하고 없으면 다운로드합니다."""
     required_resources = [
         'taggers/averaged_perceptron_tagger',
-        'taggers/averaged_perceptron_tagger_eng', # ★ 에러의 주범 (최신 버전에서 필요)
+        'taggers/averaged_perceptron_tagger_eng',
         'corpora/cmudict',
         'tokenizers/punkt'
     ]
-
-    # 윈도우 표준 경로(%APPDATA%/nltk_data)를 우선 등록 (권한 문제 방지)
     app_data = os.environ.get('APPDATA')
     if app_data:
         default_path = os.path.join(app_data, 'nltk_data')
@@ -42,15 +40,10 @@ def ensure_nltk_resources():
             nltk.data.find(resource)
         except LookupError:
             resource_name = resource.split('/')[-1]
-            print(f"[INIT] Downloading missing resource: {resource_name}...", flush=True)
             try:
                 nltk.download(resource_name, quiet=True)
-            except Exception as e:
-                print(f"[WARN] Failed to download {resource_name}: {e}", flush=True)
-
-# 실행 시 즉시 체크
+            except Exception: pass
 ensure_nltk_resources()
-# ==================================================================================
 
 
 # --- 전역 변수 및 설정 ---
@@ -58,145 +51,99 @@ AUDIO_CACHE = {}
 CACHE_LOCK = threading.Lock()
 PIPE_NAME = r"\\.\pipe\melo_tts_en"
 SPEED = 1.2
-GAIN_MULTIPLIER = 1.8 # 영어 모델용 볼륨 조절
+GAIN_MULTIPLIER = 1.8
 N_SYNTH_WORKERS = 2
 
-# main.js에서 전달한 인수로 배포 모드(packaged) 여부 확인
 IS_PACKAGED = (len(sys.argv) > 1 and sys.argv[1] == 'packaged')
 print(f"[INIT] IS_PACKAGED flag set to: {IS_PACKAGED}", flush=True)
 
-# NLTK 데이터 경로 설정 (패키징 환경 대응)
 try:
     if IS_PACKAGED and len(sys.argv) > 2:
-        BASE_PATH_EN = sys.argv[2] # resourcesPath
+        BASE_PATH_EN = sys.argv[2]
         NLTK_DATA_PATH = os.path.join(BASE_PATH_EN, 'nltk_data')
         if os.path.isdir(NLTK_DATA_PATH):
             nltk.data.path.append(NLTK_DATA_PATH)
-            print(f"[INIT] NLTK Data Path added: {NLTK_DATA_PATH}", flush=True)
     else:
-        print("[INIT] Debug Mode: Checking/Downloading NLTK data ('punkt')...", flush=True)
         nltk.download('punkt', quiet=True)
-        print("[INIT] NLTK 'punkt' data is ready.", flush=True)
 except Exception as e:
     print(f"[INIT][WARN] Failed to configure NLTK data path: {e}", flush=True)
 
-# HuggingFace 라이브러리 설정
 os.environ['HUGGINGFACE_HUB_DISABLE_SYMLINKS'] = '1'
-
-# 모델 경로 설정 (패키징/개발 환경 분기)
 COMMIT_ID_HASH = 'bb4fb7346d566d277ba8c8c7dbfdf6786139b8ef'
-LOCAL_MODEL_COMMIT_PATH = None
 
 if IS_PACKAGED:
     if len(sys.argv) > 2:
-        BASE_PATH = sys.argv[2] # main.js에서 전달한 resourcesPath
+        BASE_PATH = sys.argv[2]
         LOCAL_MODEL_COMMIT_PATH = os.path.join(BASE_PATH, 'melo-en-model', 'snapshots', COMMIT_ID_HASH)
-        print(f"[INIT] Packaged model path set to: {LOCAL_MODEL_COMMIT_PATH}", flush=True)
     else:
-        print("[INIT][FATAL] Packaged mode but BASE_PATH (sys.argv[2]) not provided.", flush=True)
         sys.exit(1)
-else: # 개발 모드
+else:
     try:
         local_app_data = os.environ.get('LOCALAPPDATA', '.')
         hf_cache_path = os.path.join(local_app_data, 'MeloTTS_Cache', 'huggingface', 'hub')
         MODEL_NAME = 'models--myshell-ai--MeloTTS-English'
         LOCAL_MODEL_COMMIT_PATH = os.path.join(hf_cache_path, MODEL_NAME, 'snapshots', COMMIT_ID_HASH)
-        print(f"[INIT] Debug Mode: Using external model path: {LOCAL_MODEL_COMMIT_PATH}", flush=True)
-    except Exception as e:
-        print(f"[FATAL] Failed to set script cache env: {e}", flush=True)
+    except Exception:
         sys.exit(1)
 
-# 필수 라이브러리 임포트
+# [수정] 필수 라이브러리: SimpleAudio 제거 -> SoundDevice 추가
 try:
     import win32pipe, win32file, win32con, pywintypes
-    import simpleaudio as sa
+    import sounddevice as sd
     from scipy.io import wavfile as sci_wav
 except ImportError as e:
     print(f"FATAL: 필수 라이브러리 로딩 실패: {e}", flush=True)
     sys.exit(1)
 
-# UTF-8 인코딩 설정
 try:
     sys.stdout.reconfigure(encoding="utf-8")
     sys.stderr.reconfigure(encoding="utf-8")
 except Exception: pass
 
-# 임시 디렉토리 설정
 try:
     base_temp_dir = os.environ.get('LOCALAPPDATA', tempfile.gettempdir())
     TMP_PATH = os.path.join(base_temp_dir, f"melo_tts_worker_en_{os.getpid()}")
     os.makedirs(TMP_PATH, exist_ok=True)
-    print(f"[INIT] Using temporary directory: {TMP_PATH}", flush=True)
-except Exception as e:
-    print(f"FATAL: Failed to create temporary directory: {e}", flush=True)
+except Exception:
     sys.exit(1)
 
-# --- 오디오 처리 유틸리티 함수들 ---
+# --- 유틸리티 함수 ---
 def pick_speaker_id(tts):
     spk2id = getattr(tts.hps.data, "spk2id", {})
     for k, v in spk2id.items():
         if "EN-US" in str(k).upper(): return int(v)
     return int(next(iter(spk2id.values()), 0))
 
-import re
-
 def split_chunks(text: str, first_len=60, rest_len=300):
     chunks = []
     cur_text = text.strip()
-
-    # 1. 초기 반응 속도를 위해 첫 청크는 짧게 설정
     target_len = first_len
 
     while cur_text:
-        # 남은 텍스트가 목표 길이보다 짧으면 그대로 반환
         if len(cur_text) <= target_len:
-            if cur_text:
-                chunks.append(cur_text)
+            if cur_text: chunks.append(cur_text)
             break
 
         candidate = cur_text[:target_len]
-
-        # [핵심] 최소 길이 안전장치 (목표 길이의 40% 이상 진행 후 자르기)
-        # 영어는 단어 길이가 다양하므로 이 안전장치가 더 중요합니다.
         min_threshold = int(target_len * 0.4)
         split_idx = -1
 
-        # --- 스마트 자르기 로직 (영어 전용) ---
-
-        # (1순위) 문장 종결 부호 (. ? ! 개행)
-        # 영어는 : (콜론)도 문장의 큰 휴지부로 쓰일 때가 많아 포함하면 좋습니다.
-        # 단, Mr. Dr. 등을 피하기 위해 뒤에 공백이나 끝이 오는 경우를 선호하게 하면 좋지만,
-        # 일단 40% 룰이 막아주므로 단순화하여 처리합니다.
         match = re.search(r'[.?!:\n](?=[^.?!:\n]*$)', candidate)
-        if match and match.end() > min_threshold:
-            split_idx = match.end()
+        if match and match.end() > min_threshold: split_idx = match.end()
 
-        # (2순위) 중간 부호 (, ;)
         if split_idx == -1:
             match = re.search(r'[,;](?=[^,;]*$)', candidate)
-            if match and match.end() > min_threshold:
-                split_idx = match.end()
+            if match and match.end() > min_threshold: split_idx = match.end()
 
-        # (3순위) 공백 (단어 단위) - 영어는 띄어쓰기가 명확해서 이게 아주 잘 먹힙니다.
         if split_idx == -1:
             last_space = candidate.rfind(' ')
-            if last_space > min_threshold:
-                split_idx = last_space
+            if last_space > min_threshold: split_idx = last_space
 
-        # (4순위) 강제 절단
-        if split_idx == -1:
-            split_idx = target_len
+        if split_idx == -1: split_idx = target_len
 
-        # --- 로직 끝 ---
-
-        # 조각 저장
         chunk = cur_text[:split_idx].strip()
-        if chunk:
-            chunks.append(chunk)
-
+        if chunk: chunks.append(chunk)
         cur_text = cur_text[split_idx:].strip()
-
-        # 첫 턴 이후에는 긴 버퍼(300자)로 전환
         target_len = rest_len
 
     return chunks
@@ -230,10 +177,9 @@ def synth_to_numpy(tts, text, speaker_id, speed, tmpdir, target_sr):
     audio = resample_if_needed(audio, src_sr, target_sr)
     return target_sr, fade_in_out(audio, target_sr)
 
-# --- 스레드 워커 함수들 ---
+# --- 워커 함수 ---
 
 def synth_worker(tts, spk_id, in_q, play_q, stop_evt, interrupt_evt, tmpdir, target_sr, wid, cache, lock):
-    """TTS 합성을 수행하고 결과를 play_q에 넣는 워커"""
     print(f"[SYNTH-{wid}] Worker started.", flush=True)
     while not stop_evt.is_set():
         try:
@@ -259,68 +205,65 @@ def synth_worker(tts, spk_id, in_q, play_q, stop_evt, interrupt_evt, tmpdir, tar
                     sr, audio = synth_to_numpy(tts, seg, spk_id, SPEED, tmpdir, target_sr)
                     if audio.size == 0: continue
                     audio = audio * GAIN_MULTIPLIER
-                    audio_int16 = (np.clip(audio, -1.0, 1.0) * 32767.0).astype(np.int16)
-                    audio_data_tuple = (target_sr, audio_int16.tobytes())
+
+                    # [수정] int16 변환 제거 -> float32 원본 그대로 사용 (SoundDevice 최적화)
+                    audio_data_tuple = (target_sr, audio)
+
                     with lock:
                         cache[cache_key] = audio_data_tuple
                     play_q.put(audio_data_tuple)
                 except Exception as e:
-                    print(f"[SYNTH-{wid}][ERR] Synth failed for «{seg}»:\n{traceback.format_exc()}", flush=True)
+                    print(f"[SYNTH-{wid}][ERR] Synth failed: {e}", flush=True)
         except queue.Empty:
             continue
     print(f"[SYNTH-{wid}] Worker stopped.", flush=True)
 
 def play_worker(play_q, stop_evt, interrupt_evt, signal_q):
-    """play_q에서 오디오 데이터를 받아 재생하고 main.js로 신호를 보내는 워커"""
-    print("[PLAY] Worker started.", flush=True)
-    done_signal_sent = True
+    """[수정] SoundDevice 기반 재생 워커"""
+    print("[PLAY] Worker started (SoundDevice).", flush=True)
     start_signal_sent = False
-    interrupt_handled = False
+
     while not stop_evt.is_set():
+        # 중단(Stop) 요청 처리
         if interrupt_evt.is_set():
-            if not interrupt_handled:
-                sa.stop_all()
-                while not play_q.empty(): play_q.get_nowait()
-                if not done_signal_sent:
-                    signal_q.put(b"DONE\n")
-                done_signal_sent, start_signal_sent, interrupt_handled = True, False, True
-                print("[PLAY] Interrupt handled.", flush=True)
+            sd.stop() # [핵심] 즉시 오디오 중단
+            while not play_q.empty(): play_q.get_nowait()
+            signal_q.put(b"DONE\n")
+            interrupt_evt.clear()
+            start_signal_sent = False
             time.sleep(0.02)
             continue
-        if interrupt_handled:
-            print("[PLAY] Interrupt cleared.", flush=True)
-            interrupt_handled = False
+
         try:
-            sr, audio_bytes = play_q.get(timeout=0.05)
-            if audio_bytes is None: break
-            done_signal_sent = False
+            # 큐에서 (sr, numpy_float_array) 가져오기
+            item = play_q.get(timeout=0.05)
+            if item is None: break
+            sr, audio_data = item
+
             if not start_signal_sent:
                 signal_q.put(b"START\n")
                 start_signal_sent = True
-            play_obj = sa.play_buffer(audio_bytes, 1, 2, sr)
-            while play_obj.is_playing():
-                if interrupt_evt.is_set():
-                    sa.stop_all()
-                    break
-                time.sleep(0.01)
+
+            # [핵심] 메모리 데이터 직접 재생
+            sd.play(audio_data, sr)
+            sd.wait() # 재생 끝날 때까지 대기 (외부에서 sd.stop() 호출 시 즉시 풀림)
+
             if not interrupt_evt.is_set() and play_q.empty():
                 signal_q.put(b"DONE\n")
-                done_signal_sent, start_signal_sent = True, False
+                start_signal_sent = False
+
         except queue.Empty:
             continue
-    sa.stop_all()
+        except Exception as e:
+            print(f"[PLAY] Error: {e}", flush=True)
+
+    sd.stop()
     print("[PLAY] Worker stopped.", flush=True)
 
 def run_pipe_loop(in_q, stop_evt, interrupt_evt, signal_q):
-    """Windows Named Pipe 통신 (영어용 스마트 버퍼링 추가)"""
     print("[PIPE] Worker started with Smart Buffering (EN).", flush=True)
-
-    # 영어 문장 종결 패턴 (마침표, 물음표, 느낌표, 개행, 콜론)
-    # 한국어 부호(。？！)는 제거하고 영어에 자주 쓰이는 콜론(:) 추가
     re_end = re.compile(r'[.?!:\n]')
-    # 쉼표 패턴
     re_comma = re.compile(r'[,;]')
-
     text_buffer = ""
 
     while not stop_evt.is_set():
@@ -329,9 +272,7 @@ def run_pipe_loop(in_q, stop_evt, interrupt_evt, signal_q):
             handle = win32pipe.CreateNamedPipe(PIPE_NAME, win32con.PIPE_ACCESS_DUPLEX,
                                                win32pipe.PIPE_TYPE_MESSAGE | win32pipe.PIPE_READMODE_MESSAGE | win32pipe.PIPE_WAIT,
                                                1, 65536, 65536, 0, None)
-            print(f"[PIPE] Ready on {PIPE_NAME}", flush=True)
             win32pipe.ConnectNamedPipe(handle, None)
-            print("[PIPE] Client Connected", flush=True)
 
             buf = b""
             while not stop_evt.is_set():
@@ -356,8 +297,8 @@ def run_pipe_loop(in_q, stop_evt, interrupt_evt, signal_q):
                             command = obj.get("command", "")
                             text = obj.get("text", "")
 
-                            # 1. 명시적 Stop 명령 처리
                             if command == "stop":
+                                sd.stop() # [추가] 즉시 소리 끔
                                 while not in_q.empty(): in_q.get_nowait()
                                 interrupt_evt.set()
                                 text_buffer = ""
@@ -373,19 +314,14 @@ def run_pipe_loop(in_q, stop_evt, interrupt_evt, signal_q):
 
                             elif text:
                                 if interrupt_evt.is_set(): interrupt_evt.clear()
-
-                                # ★ [핵심 수정] "stop"이라는 텍스트가 들어오면 읽지 말고 멈춤 명령으로 처리
                                 if text.strip().lower() == "stop":
-                                    print("[PIPE] 'stop' text detected -> Converting to COMMAND.", flush=True)
+                                    sd.stop() # [추가] 즉시 소리 끔
                                     while not in_q.empty(): in_q.get_nowait()
                                     interrupt_evt.set()
                                     text_buffer = ""
                                     continue
 
-                                # --- 버퍼링 로직 (기존 유지) ---
                                 text_buffer += text
-
-                                # (KR/EN 파일에 맞춰 기존 정규식 re_end, re_comma 사용)
                                 matches = list(re_end.finditer(text_buffer))
                                 if matches:
                                     last_idx = matches[-1].end()
@@ -402,13 +338,11 @@ def run_pipe_loop(in_q, stop_evt, interrupt_evt, signal_q):
                                         text_buffer = text_buffer[last_idx:]
                                         in_q.put(to_send)
                                         continue
-
                                 if len(text_buffer) > 500:
                                     in_q.put(text_buffer)
                                     text_buffer = ""
 
-                        except json.JSONDecodeError:
-                            pass
+                        except json.JSONDecodeError: pass
 
                 except pywintypes.error as e:
                     if e.winerror in [109, 232]: break
@@ -418,33 +352,26 @@ def run_pipe_loop(in_q, stop_evt, interrupt_evt, signal_q):
             time.sleep(1)
         finally:
             if handle: win32file.CloseHandle(handle)
-            print("[PIPE] Connection loop reset.", flush=True)
 
 def warmup(tts, spk_id, target_sr, tmpdir):
-    """모델 로딩 후 초기 실행 속도 향상을 위한 워밍업"""
     try:
         print("[WARMUP] 시작", flush=True)
-        # ⬇️ (sr, audio_float)로 받음
         sr, audio_float = synth_to_numpy(tts, "Warming up.", spk_id, 1.0, tmpdir, target_sr)
         if audio_float.size > 0:
-            # ⬇️ GAIN_MULTIPLIER를 사용하는 코드
-            audio_int16 = (np.clip(audio_float * GAIN_MULTIPLIER * 0.5, -1.0, 1.0) * 32767.0).astype(np.int16)
-            sa.play_buffer(audio_int16.tobytes(), 1, 2, sr).wait_done()
+            # [수정] SoundDevice로 워밍업 재생
+            sd.play(audio_float * GAIN_MULTIPLIER * 0.5, sr)
+            sd.wait()
         print("[WARMUP] 완료", flush=True)
     except Exception as e:
-        print(f"[WARMUP][WARN] \n{traceback.format_exc()}", flush=True)
+        print(f"[WARMUP][WARN] {e}", flush=True)
 
-# --- 메인 실행 ---
 def main():
-    print("[INIT] Starting TTS EN Worker...", flush=True)
-
-    # 큐, 이벤트 객체 및 파이프 스레드를 모델 로딩 전에 시작
+    print("[INIT] Starting TTS EN Worker (SoundDevice)...", flush=True)
     in_q, play_q, signal_q = queue.Queue(), queue.Queue(), queue.Queue(maxsize=10)
     stop_evt, interrupt_evt = threading.Event(), threading.Event()
     th_pipe = threading.Thread(target=run_pipe_loop, args=(in_q, stop_evt, interrupt_evt, signal_q), daemon=True)
     th_pipe.start()
 
-    # 무거운 모델 로딩
     try:
         print("[INIT] Loading MeloTTS EN model...", flush=True)
         tts = TTS(language="EN", device="auto")
@@ -459,8 +386,6 @@ def main():
     warmup(tts, spk_id, target_sr, TMP_PATH)
     tmpdir = tempfile.mkdtemp(prefix="_melo_run_en_", dir=TMP_PATH)
 
-    # 모델 로딩 후 Play/Synth 워커 시작
-    print("[INIT] Starting worker threads (Play, Synth)...", flush=True)
     th_play = threading.Thread(target=play_worker, args=(play_q, stop_evt, interrupt_evt, signal_q), daemon=True)
     th_play.start()
     workers = []
@@ -469,26 +394,19 @@ def main():
         th.start()
         workers.append(th)
 
-    print(f"[INIT] All threads started. Monitoring...", flush=True)
     try:
         while not stop_evt.is_set():
-            if not all(t.is_alive() for t in workers + [th_play, th_pipe]):
-                print("[ERROR] A worker thread died unexpectedly. Exiting.", flush=True)
-                stop_evt.set()
             time.sleep(0.5)
-    except KeyboardInterrupt:
-        print("\n[EXIT] KeyboardInterrupt.", flush=True)
+    except KeyboardInterrupt: pass
     finally:
-        print("[EXIT] Shutting down...", flush=True)
         stop_evt.set()
-        # 워커 스레드 종료 신호 전송 및 정리
         for _ in workers: in_q.put(None)
-        play_q.put((0, None))
-        try: # 파이프 스레드 종료를 위한 더미 연결
+        play_q.put(None)
+        try:
             handle = win32file.CreateFile(PIPE_NAME, win32con.GENERIC_WRITE, 0, None, win32con.OPEN_EXISTING, 0, None)
             win32file.CloseHandle(handle)
         except Exception: pass
-        for th in workers + [th_play, th_pipe]: th.join(timeout=2.0)
+        sd.stop() # 최종 오디오 중단
         shutil.rmtree(TMP_PATH, ignore_errors=True)
         print("[EXIT] Shutdown complete.", flush=True)
 

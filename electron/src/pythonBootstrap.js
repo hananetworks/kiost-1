@@ -8,13 +8,22 @@ const { log } = require('./logging/logger');
 const dotenv = require('dotenv');
 
 // [설정]
-const REQUIRED_ENV_VERSION = 'env-v1.2.6';
+const REQUIRED_ENV_VERSION = 'env-v1.2.7';
 const REPO_OWNER = 'hananetworks';
 const REPO_NAME = 'kiosk-python-runtime';
 const MAX_RETRIES = 3;
 
 const USER_DATA_PATH = app.getPath('userData');
-const PYTHON_ENV_PATH = path.join(USER_DATA_PATH, 'python-env');
+const LOCAL_APP_DATA = process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
+const APP_LOCAL_PATH = path.join(LOCAL_APP_DATA, 'MAXEE_promotional'); // 앱 이름 폴더
+
+// 폴더가 없으면 에러 날 수 있으니 미리 생성해주는 센스
+if (!fs.existsSync(APP_LOCAL_PATH)) {
+    try { fs.mkdirSync(APP_LOCAL_PATH, { recursive: true }); } catch(e) {}
+}
+
+// 3. 파이썬 경로를 Local 쪽으로 변경
+const PYTHON_ENV_PATH = path.join(APP_LOCAL_PATH, 'python-env');
 const VERSION_FILE = path.join(PYTHON_ENV_PATH, 'version.txt');
 const PYTHON_EXE = path.join(PYTHON_ENV_PATH, 'kiosk_python.exe');
 
@@ -165,8 +174,8 @@ async function ensurePythonEnvironment(win) {
 
         if (!zipAsset) throw new Error(`${targetFileName} 없음`);
 
-        tempZipPath = path.join(USER_DATA_PATH, `temp_${downloadTarget}.zip`);
-        const tempHashPath = path.join(USER_DATA_PATH, 'temp_hash.txt');
+        const tempZipPath = path.join(APP_LOCAL_PATH, `temp_${downloadTarget}.zip`);
+        const tempHashPath = path.join(APP_LOCAL_PATH, 'temp_hash.txt');
 
         await downloadWithRetry(zipAsset.url, tempZipPath, token, win);
         if (hashAsset) await downloadWithRetry(hashAsset.url, tempHashPath, token, null);
