@@ -9,12 +9,12 @@ import { useLanguage } from "../../hooks/useLanguage";
 import { useTts } from "../../hooks/useTts";
 
 export default function HistoryPage({
-                                        setContrastLevel,
-                                        zoomLevel,
-                                        setZoomLevel,
-                                        voiceSettings,
-                                        setVoiceSettings,
-                                    }) {
+    setContrastLevel,
+    zoomLevel,
+    setZoomLevel,
+    voiceSettings,
+    setVoiceSettings,
+}) {
     const { id } = useParams();
     const initialIndex = historyContents.findIndex((item) => item.id === parseInt(id, 10));
     const [page, setPage] = useState(initialIndex >= 0 ? initialIndex : 0);
@@ -26,23 +26,27 @@ export default function HistoryPage({
 
     const current = historyContents[page];
 
-    // 2. TTS 재생
+    // 2. TTS 재생 (수정: 딜레이 제거, 다국어 지원)
     useEffect(() => {
-        if (normalizedLang !== 'ko' && normalizedLang !== 'en') {
-            stopTts();
-            return;
+        // 언어별 설명 가져오기
+        let desc = "";
+        switch (normalizedLang) {
+            case "en": desc = current.desc_en || current.desc_ko; break;
+            case "zh": desc = current.desc_zh || current.desc_ko; break;
+            case "ja": desc = current.desc_ja || current.desc_ko; break;
+            case "es": desc = current.desc_es || current.desc_ko; break;
+            case "vi": desc = current.desc_vi || current.desc_en || current.desc_ko; break; // 🇻🇳
+            case "tl":
+            case "fil": desc = current.desc_tl || current.desc_en || current.desc_ko; break; // 🇵🇭
+            default: desc = current.desc_ko; break;
         }
-
-        const desc = normalizedLang === 'en'
-            ? (current.desc_en || current.desc_ko)
-            : current.desc_ko;
 
         const ttsText = desc.replace(/\\n/g, " ").replace(/\n/g, " ").trim() + ".";
 
         const timer = setTimeout(() => {
             stopTts();
             addText(ttsText, true);
-        }, 1000);
+        }, 50);
 
         return () => {
             clearTimeout(timer);
@@ -65,6 +69,8 @@ export default function HistoryPage({
         if (normalizedLang === 'zh') return current.title_cn || current.title;
         if (normalizedLang === 'ja') return current.title_jp || current.title;
         if (normalizedLang === 'es') return current.title_es || current.title;
+        if (normalizedLang === 'vi') return current.title_vi || current.title_en || current.title; // 🇻🇳
+        if (normalizedLang === 'tl' || normalizedLang === 'fil') return current.title_tl || current.title_en || current.title; // 🇵🇭
         return current.title;
     };
 
@@ -74,6 +80,9 @@ export default function HistoryPage({
             case "zh": return current.desc_zh || current.desc_ko;
             case "ja": return current.desc_ja || current.desc_ko;
             case "es": return current.desc_es || current.desc_ko;
+            case "vi": return current.desc_vi || current.desc_en || current.desc_ko; // 🇻🇳
+            case "tl":
+            case "fil": return current.desc_tl || current.desc_en || current.desc_ko; // 🇵🇭
             default: return current.desc_ko;
         }
     };
@@ -97,10 +106,10 @@ export default function HistoryPage({
             subtitle={current.subtitle || "상세 정보"}
         >
             <div key={page}
-                 className="w-full flex flex-col items-center px-4 outline-none"
-                 ref={mainContentRef}
-                 tabIndex="-1"
-                 role="region"
+                className="w-full flex flex-col items-center px-4 outline-none"
+                ref={mainContentRef}
+                tabIndex="-1"
+                role="region"
             >
                 {/* 제목 */}
                 <h2 className="text-3xl lg:text-4xl xl:text-5xl font-bold">
@@ -111,7 +120,7 @@ export default function HistoryPage({
                 <p className={`description-box mt-4 p-6 border border-gray-300 rounded-xl shadow-sm bg-white 
                     w-full h-[550px] overflow-y-auto leading-relaxed notranslate
                     text-gray-700 text-2xl lg:text-3xl xl:text-4xl`}
-                   style={{ whiteSpace: "pre-wrap" }}
+                    style={{ whiteSpace: "pre-wrap" }}
                 >
                     {getDescription().replace(/\\n/g, "\n").trim()}
                 </p>

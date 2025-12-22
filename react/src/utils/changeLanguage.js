@@ -29,7 +29,7 @@ function applyCookieFallback(lang) {
     const v2 = `/auto/${lang}`;
     document.cookie = `googtrans=${v1};path=/;domain=${host}`;
     document.cookie = `googtrans=${v2};path=/;domain=${host}`;
-    try { localStorage.setItem("app_lang", lang); } catch {}
+    try { localStorage.setItem("app_lang", lang); } catch { }
 
     window.dispatchEvent(new Event("languagechange"));
     setTimeout(() => window.location.reload(), 100);
@@ -41,7 +41,7 @@ export async function changeLanguage(langCode) {
         const combo = getCombo() || (await waitForCombo());
         combo.value = langCode;
         combo.dispatchEvent(new Event("change", { bubbles: true }));
-        try { localStorage.setItem("app_lang", langCode); } catch {}
+        try { localStorage.setItem("app_lang", langCode); } catch { }
 
         document.body.classList.remove("lang-ko", "lang-en");
         document.body.classList.add(`lang-${langCode}`);
@@ -70,12 +70,14 @@ export function getActiveLang() {
     return "ko";
 }
 
-// ✅ [Helper] 언어 코드 정규화 (Hook에서 사용) - 새로 추가됨!
+// ✅ [Helper] 언어 코드 정규화 (Hook에서 사용)
 export function normalizeLang(lang) {
     const v = (lang || "").toLowerCase();
     if (v.includes("zh")) return "zh";   // 중국어 통합
     if (v.includes("ja")) return "ja";   // 일본어
     if (v.includes("es")) return "es";   // 스페인어
     if (v.includes("en")) return "en";   // 영어
+    if (v.includes("vi")) return "vi";   // 🇻🇳 베트남어
+    if (v.includes("tl") || v.includes("fil")) return "tl";   // 🇵🇭 필리핀어/타갈로그어
     return "ko";                         // 기본값
 }

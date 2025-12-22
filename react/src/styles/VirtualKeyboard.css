@@ -1,0 +1,82 @@
+/* src/styles/VirtualKeyboard.css */
+.keyboard-container {
+    width: 100%;
+    max-width: 1050px;
+    margin: 0 auto;
+    user-select: none;
+}
+
+/* 입력창 영역 */
+.input-group {
+    margin: 50px 0px;
+    text-align: center;
+}
+
+.input-display {
+    border: none;
+    border-bottom: 2px solid lightgrey;
+    width: 100%;
+    max-width: 1050px;
+    height: 50px;
+    font-size: 30px;
+    text-align: center;
+    display: block;
+    margin: 0 auto;
+    outline: none;
+    background: transparent; /* 배경 투명 */
+}
+
+/* 키보드 몸체 */
+.keyboard {
+    background-color: rgb(189, 189, 189);
+    padding: 20px;
+    border-radius: 10px;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+}
+
+.row {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 10px;
+}
+
+/* 키 버튼 스타일 */
+.key {
+    width: 60px;
+    height: 60px;
+    margin: 5px;
+    border-radius: 8px;
+    background-color: white;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    transition: 0.1s;
+    font-weight: bold;
+    font-size: 18px;
+    color: #333;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+}
+
+.key:active, .key.active {
+    background-color: #333;
+    color: #fff;
+    transform: scale(0.95);
+}
+
+.key .two-value {
+    font-size: 14px;
+    line-height: 1.2;
+}
+
+/* 특수 키 사이즈 조절 */
+.fn-key { width: 80px; background-color: #e0e0e0; }
+.space-key { width: 420px; }
+.back-space-key { width: 130px; background-color: #ffcccc; }
+.tab-key { width: 95px; background-color: #e0e0e0; }
+.back-slash-key { width: 95px; }
+.caps-lock-key { width: 110px; background-color: #e0e0e0; position: relative; }
+.left-shift-key { width: 145px; background-color: #e0e0e0; }
+.enter-key { width: 150px; background-color: #ccffcc; }
+.right-shift-key { width: 185px; background-color: #e0e0e0; }

@@ -44,6 +44,18 @@ es especialmente famosa por sus paisajes nevados en invierno
 y sus campos de flores silvestres en primavera,
 atrayendo excursionistas de todo el país durante todo el año.`,
 
+        desc_vi: `Vươn cao giữa Cheonan và Asan, núi Gwangdeoksan là ngọn núi cao thứ ba ở Chungcheongnam-do và là "lá phổi xanh" được người dân địa phương yêu mến.
+    
+Nổi tiếng với phong cảnh đẹp như tranh vẽ suốt bốn mùa, nơi đây đặc biệt lừng danh với cảnh quan phủ đầy tuyết vào mùa đông và những cánh đồng hoa dại vào mùa xuân.
+    
+Những đặc điểm này thu hút vô số người leo núi từ khắp nơi trên đất nước quanh năm.`,
+
+        desc_tl: `Matatagpuan sa pagitan ng Cheonan at Asan, ang Bundok Gwangdeoksan ay ang pangatlong pinakamataas na tuktok sa Chungcheongnam-do at isang itinatangi na "berdeng baga" (green lung) para sa mga lokal na residente.
+    
+Kilala sa magandang tanawin nito sa buong apat na panahon, sikat ito lalo na sa mga tanawing nababalutan ng niyebe tuwing taglamig at mga patlang ng ligaw na bulaklak tuwing tagsibol.
+    
+Ang mga tampok na ito ay umaakit ng hindi mabilang na mga hiker mula sa buong bansa sa buong taon.`,
+
         subtitle: `사계절 내내 아름다운 풍경을 
             자랑하는 광덕산입니다.`,
 
@@ -95,6 +107,19 @@ por donde pasaban innumerables personas y mercancías.
 Hoy, basado en su importancia histórica,
 el parque se ha convertido en uno de los lugares
 de descanso más queridos por los ciudadanos.`,
+
+        desc_vi: `Công viên Cheonan Samgeori, một địa danh mang tính biểu tượng và là điểm gặp gỡ phổ biến của thành phố, không chỉ là một công viên đô thị mà còn là một không gian thấm đẫm lịch sử và văn hóa phong phú.
+    
+Trong lịch sử, Ngã ba Cheonan là một trung tâm giao thông chính, đóng vai trò là ngã tư giữa vùng Yeongnam và Honam, nơi vô số người, hàng hóa và những câu chuyện đã đi qua.
+    
+Ngày nay, được xây dựng dựa trên ý nghĩa lịch sử này, công viên đã trở thành một trong những không gian giải trí được yêu thích nhất của người dân.`,
+
+        desc_tl: `Ang Cheonan Samgeori Park, isang simbolikong palatandaan at sikat na tagpuan sa lungsod, ay higit pa sa isang parke sa lunsod; ito ay isang puwang na puno ng mayamang kasaysayan at kultura.
+    
+Sa kasaysayan, ang Cheonan Samgeori ay isang pangunahing sentro ng transportasyon, na nagsisilbing sangandaan sa pagitan ng mga rehiyon ng Yeongnam at Honam, kung saan dumaan ang hindi mabilang na mga tao, kalakal, at kwento.
+    
+Ngayon, itinayo batay sa makasaysayang kahalagahan na ito, ang parke ay naging isa sa mga pinakamamahal na lugar ng paglilibang para sa mga mamamayan.`,
+
         subtitle: `천안의 상징, 천안삼거리공원입니다. 
             도심 속에서 자연과 문화를 함께 느낄 수 있습니다.`,
     },
@@ -134,6 +159,19 @@ combina el valor ecológico con un paisaje escénico impresionante.
 Antiguamente un embalse agrícola,
 hoy se ha transformado en un parque ecológico
 donde la naturaleza y las personas conviven armoniosamente.`,
+
+        desc_vi: `Công viên hồ Seongseong, nằm ở Seongseong-dong, Cheonan, là một địa danh mới của thành phố và là không gian chữa lành đô thị được yêu thích.
+    
+Lấy trung tâm là một hồ nước rộng lớn, nơi đây kết hợp hài hòa giữa giá trị sinh thái và vẻ đẹp danh lam thắng cảnh.
+    
+Từng là một hồ chứa nước nông nghiệp, hồ Seongseong đã được tái sinh thành một công viên thân thiện với môi trường, nơi thiên nhiên và con người cùng tồn tại với cảnh quan mặt nước yên bình và tầm nhìn ban đêm rực rỡ.`,
+
+        desc_tl: `Ang Seongseong Lake Park, na matatagpuan sa Seongseong-dong, Cheonan, ay isang bagong palatandaan ng lungsod at isang minamahal na urban healing space.
+    
+Nakasentro sa paligid ng isang malawak na lawa, pinagkakasundo nito ang halagang ekolohikal at magandang tanawin.
+    
+Dating imbakan ng tubig para sa agrikultura, ang Seongseong Lake ay muling isinilang bilang isang parke na eco-friendly kung saan ang kalikasan at mga tao ay magkakasamang nabubuhay, na may mapayapang tanawin ng tubig at nakasisilaw na tanawin sa gabi.`,
+
         subtitle: `호수와 야경이 아름다운 성성호수공원입니다. 
             도심 속 자연 속에서 휴식을 느껴보세요.`,
     },
@@ -178,6 +216,19 @@ está llena de plantas nativas y bosques exuberantes.
 Con cabañas, zonas de camping, un centro infantil y senderos,
 es un destino ideal para familias que desean disfrutar de la naturaleza
 y fortalecer su bienestar emocional.`,
+
+        desc_vi: `Nằm ở Cheonan, Rừng giải trí tự nhiên Taehaksan là nơi nghỉ dưỡng trong rừng bao quanh Tượng Phật đứng tạc trên đá Cheonan Samtaeri (Bảo vật số 407), một di tích văn hóa từ triều đại Goryeo.
+
+Bản thân ngọn núi có tên là Taehaksan vì hình dáng giống như con sếu đang múa, là nơi sinh sống của nhiều loài thực vật bản địa và rừng cây phong phú.
+
+Khu rừng được trang bị nhiều cơ sở vật chất, bao gồm nhà gỗ trong rừng, khu cắm trại ô tô, trung tâm trải nghiệm rừng cho trẻ em, đường mòn đi bộ đường dài và sân chơi, khiến nơi đây trở thành điểm đến lý tưởng cho các gia đình.`,
+
+        desc_tl: `Matatagpuan sa Cheonan, ang Taehaksan Natural Recreation Forest ay isang pahingahan sa kagubatan na yumayakap sa Cheonan Samtaeri Rock-carved Standing Buddha (Yaman Blg. 407), isang pangkulturang relikya mula sa Dinastiyang Goryeo.
+
+Ang bundok mismo, na pinangalanang Taehaksan dahil sa hugis nitong parang sumasayaw na tagak (crane), ay tahanan ng iba't ibang katutubong halaman at mayayamang kakahuyan.
+
+Ang kagubatan ay nilagyan ng iba't ibang pasilidad, kabilang ang mga cabin sa gubat, isang auto camping site, sentro ng karanasan sa kagubatan ng mga bata, mga hiking trail, at mga palaruan, na ginagawa itong isang mainam na destinasyon para sa mga pamilya.`,
+
         subtitle: `자연을 체험할 수 있는 천안의 휴양지,
             태학산자연휴양림입니다.`,
     },

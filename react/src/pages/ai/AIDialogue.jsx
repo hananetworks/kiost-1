@@ -11,15 +11,42 @@ import { useTts } from "../../hooks/useTts";
 
 const INTERIM_MESSAGE_ID = "interim-message-id";
 
+// Helper functions for multilingual messages
+function getWelcomeMessage(lang) {
+    const messages = {
+        ko: "안녕하세요! 무엇을 도와드릴까요?",
+        en: "Hello! How can I help you?",
+        ja: "こんにちは！何をお手伝いしましょうか？",
+        zh: "你好！我能帮你什么？",
+        vi: "Xin chào! Tôi có thể giúp gì cho bạn?", // 🇻🇳
+        tl: "Kamusta! Paano kita matutulungan?", // 🇵🇭
+        fil: "Kamusta! Paano kita matutulungan?", // 🇵🇭
+    };
+    return messages[lang] || messages.en;
+}
+
+function getSubtitleMessage(lang) {
+    const subtitles = {
+        ko: "안녕하세요! 하나 AI 도우미입니다.",
+        en: "Hello! I'm Hana AI Assistant.",
+        ja: "こんにちは！ハナAIアシスタントです。",
+        zh: "你好！我是哈娜AI助手。",
+        vi: "Xin chào! Tôi là Trợ lý AI Hana.", // 🇻🇳
+        tl: "Kamusta! Ako si Hana AI Assistant.", // 🇵🇭
+        fil: "Kamusta! Ako si Hana AI Assistant.", // 🇵🇭
+    };
+    return subtitles[lang] || subtitles.en;
+}
+
 export default function AIDialogue({
-                                       banner,
-                                       setContrastLevel,
-                                       zoomLevel,
-                                       setZoomLevel,
-                                       voiceSettings,
-                                       setVoiceSettings,
-                                       // isSpeaking, setIsSpeaking // 훅 내부에서 처리하므로 props 의존성 낮춤
-                                   }) {
+    banner,
+    setContrastLevel,
+    zoomLevel,
+    setZoomLevel,
+    voiceSettings,
+    setVoiceSettings,
+    // isSpeaking, setIsSpeaking // 훅 내부에서 처리하므로 props 의존성 낮춤
+}) {
     // 1. 언어 훅 (중복 제거)
     const { lang } = useLanguage();
     const isKorean = lang === 'ko';
@@ -28,13 +55,11 @@ export default function AIDialogue({
     const [messages, setMessages] = useState([{
         id: crypto.randomUUID(),
         role: "assistant",
-        content: isKorean ? "안녕하세요! 무엇을 도와드릴까요?" : "Hello! How can I help you?"
+        content: getWelcomeMessage(lang)
     }]);
 
     // 기본 자막
-    const [liveSubtitle, setLiveSubtitle] = useState(
-        isKorean ? "안녕하세요! 하나 AI 도우미입니다." : "Hello! I'm Hana AI Assistant."
-    );
+    const [liveSubtitle, setLiveSubtitle] = useState(getSubtitleMessage(lang));
 
     const [isLoading, setIsLoading] = useState(false);
     const chatEndRef = useRef(null);
@@ -201,19 +226,18 @@ export default function AIDialogue({
                         </div>
                     )}
 
-                    <div ref={chatEndRef}/>
+                    <div ref={chatEndRef} />
                 </div>
 
                 {/* 마이크 버튼 */}
                 <button
                     onClick={isListening ? stopRecording : startRecording}
-                    className={`absolute bottom-16 left-1/2 -translate-x-1/2 w-40 h-40 rounded-full text-white flex items-center justify-center shadow-lg transition-all duration-300 focus:outline-none focus:ring-4 focus:ring-blue-500 ${
-                        isListening
-                            ? 'bg-red-600 animate-pulse scale-110'
-                            : 'bg-blue-600 hover:bg-blue-700 active:scale-95'
-                    }`}
+                    className={`absolute bottom-16 left-1/2 -translate-x-1/2 w-40 h-40 rounded-full text-white flex items-center justify-center shadow-lg transition-all duration-300 focus:outline-none focus:ring-4 focus:ring-blue-500 ${isListening
+                        ? 'bg-red-600 animate-pulse scale-110'
+                        : 'bg-blue-600 hover:bg-blue-700 active:scale-95'
+                        }`}
                 >
-                    <MicIcon className="w-20 h-20"/>
+                    <MicIcon className="w-20 h-20" />
                 </button>
             </div>
         </KioskLayout>

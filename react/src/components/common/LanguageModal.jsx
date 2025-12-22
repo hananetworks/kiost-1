@@ -19,11 +19,10 @@ export default function LanguageModal({ onClose, onSelect, selected = "ko" }) {
                     <button
                         onClick={() => onSelect?.("ko")}
                         className={`py-4 rounded-2xl text-3xl font-semibold transition-all duration-200 border-2
-              ${
-                            selected === "ko"
+              ${selected === "ko"
                                 ? "bg-blue-100 border-blue-500 text-blue-700 shadow-md"
                                 : "bg-gray-100 hover:bg-gray-200 border-transparent text-gray-800"
-                        }`}
+                            }`}
                     >
                         한국어
                     </button>
@@ -32,11 +31,10 @@ export default function LanguageModal({ onClose, onSelect, selected = "ko" }) {
                     <button
                         onClick={() => onSelect?.("en")}
                         className={`py-4 rounded-2xl text-3xl font-semibold transition-all duration-200 border-2
-              ${
-                            selected === "en"
+              ${selected === "en"
                                 ? "bg-blue-100 border-blue-500 text-blue-700 shadow-md"
                                 : "bg-gray-100 hover:bg-gray-200 border-transparent text-gray-800"
-                        }`}
+                            }`}
                     >
                         English
                     </button>
@@ -45,11 +43,10 @@ export default function LanguageModal({ onClose, onSelect, selected = "ko" }) {
                     <button
                         onClick={() => onSelect?.("zh-CN")}
                         className={`py-4 rounded-2xl text-3xl font-semibold transition-all duration-200 border-2
-              ${
-                            selected === "zh-CN"
+              ${selected === "zh-CN"
                                 ? "bg-blue-100 border-blue-500 text-blue-700 shadow-md"
                                 : "bg-gray-100 hover:bg-gray-200 border-transparent text-gray-800"
-                        }`}
+                            }`}
                     >
                         中文（简体）
                     </button>
@@ -58,11 +55,10 @@ export default function LanguageModal({ onClose, onSelect, selected = "ko" }) {
                     <button
                         onClick={() => onSelect?.("ja")}
                         className={`py-4 rounded-2xl text-3xl font-semibold transition-all duration-200 border-2
-              ${
-                            selected === "ja"
+              ${selected === "ja"
                                 ? "bg-blue-100 border-blue-500 text-blue-700 shadow-md"
                                 : "bg-gray-100 hover:bg-gray-200 border-transparent text-gray-800"
-                        }`}
+                            }`}
                     >
                         日本語
                     </button>
@@ -71,13 +67,36 @@ export default function LanguageModal({ onClose, onSelect, selected = "ko" }) {
                     <button
                         onClick={() => onSelect?.("es")}
                         className={`py-4 rounded-2xl text-3xl font-semibold transition-all duration-200 border-2
-              ${
-                            selected === "es"
+              ${selected === "es"
                                 ? "bg-blue-100 border-blue-500 text-blue-700 shadow-md"
                                 : "bg-gray-100 hover:bg-gray-200 border-transparent text-gray-800"
-                        }`}
+                            }`}
                     >
                         Español
+                    </button>
+
+                    {/* 🇻🇳 베트남어 (Piper Tier 2) */}
+                    <button
+                        onClick={() => onSelect?.("vi")}
+                        className={`py-4 rounded-2xl text-3xl font-semibold transition-all duration-200 border-2
+              ${selected === "vi"
+                                ? "bg-blue-100 border-blue-500 text-blue-700 shadow-md"
+                                : "bg-gray-100 hover:bg-gray-200 border-transparent text-gray-800"
+                            }`}
+                    >
+                        🇻🇳 Tiếng Việt
+                    </button>
+
+                    {/* 🇵🇭 필리핀어/타갈로그어 (Sherpa Tier 3) */}
+                    <button
+                        onClick={() => onSelect?.("tl")}
+                        className={`py-4 rounded-2xl text-3xl font-semibold transition-all duration-200 border-2
+              ${selected === "tl"
+                                ? "bg-blue-100 border-blue-500 text-blue-700 shadow-md"
+                                : "bg-gray-100 hover:bg-gray-200 border-transparent text-gray-800"
+                            }`}
+                    >
+                        🇵🇭 Tagalog
                     </button>
                 </div>
 

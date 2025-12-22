@@ -7,7 +7,7 @@ const crypto = require('crypto');
 const { log } = require('./logging/logger');
 const dotenv = require('dotenv');
 const os = require('os');
-const { execSync } = require('child_process'); // [추가] 외부 명령어(hpatchz) 실행용
+const { execSync } = require('child_process');
 
 // [설정]
 const REQUIRED_ENV_VERSION = 'env-v1.3.5'; // 목표 버전
@@ -17,8 +17,8 @@ const MAX_RETRIES = 3;
 
 const USER_DATA_PATH = app.getPath('userData');
 const LOCAL_APP_DATA = process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
-const APP_LOCAL_PATH = path.join(LOCAL_APP_DATA, 'MAXEE_promotional'); // 앱 루트
-const UPDATE_CACHE_PATH = path.join(APP_LOCAL_PATH, 'updates'); // [추가] 업데이트 파일 보관소
+const APP_LOCAL_PATH = path.join(LOCAL_APP_DATA, 'MAXEE_promotional');
+const UPDATE_CACHE_PATH = path.join(APP_LOCAL_PATH, 'updates');
 
 // 필요한 폴더 생성
 [APP_LOCAL_PATH, UPDATE_CACHE_PATH].forEach(dir => {

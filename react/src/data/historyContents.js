@@ -37,6 +37,13 @@ Inaugurado el 15 de agosto de 1987, Día de la Liberación,
 no es solo un museo, sino también un espacio
 que refuerza la identidad nacional y fomenta el espíritu patriótico.`,
 
+        desc_vi: `Nằm ở Cheonan, Chungcheongnam-do, Độc Lập Kỷ Niệm Quán là một địa điểm giáo dục lịch sử sống động, được xây dựng bằng sự đóng góp của toàn thể người dân để tôn vinh lịch sử hào hùng vượt qua khủng hoảng quốc gia và bảo vệ độc lập trước sự xâm lược của nước ngoài.
+
+Khai trương vào ngày Quốc khánh 15 tháng 8 năm 1987, nơi đây không chỉ là một bảo tàng mà còn là nơi góp phần thiết lập bản sắc dân tộc và nuôi dưỡng tinh thần yêu nước kiên định trong lòng người dân.`,
+
+        desc_tl: `Matatagpuan sa Cheonan, Chungcheongnam-do, ang Independence Hall of Korea ay isang buhay na pook-edukasyon ng kasaysayan, na itinayo sa pamamagitan ng mga donasyon mula sa buong bansa upang parangalan ang maningning na kasaysayan ng ating mga tao sa paglampas sa mga pambansang krisis at pagtatanggol sa kalayaan laban sa mga dayuhang mananakop.
+
+Binuksan noong Araw ng Paglaya, Agosto 15, 1987, ito ay hindi lamang nagsisilbing museo, kundi bilang isang lugar na tumutulong sa pagtatatag ng pambansang pagkakakilanlan at nagpapalakas ng matatag na diwang makabayan sa mga tao.`,
 
         subtitle: `대한민국의 독립정신을 기리는 
         역사 교육의 현장, 독립기념관입니다.`,
@@ -73,6 +80,14 @@ por la independencia de Corea durante el período colonial japonés.
 Incluye su casa natal, un salón conmemorativo, un pabellón y una torre de fuego,
 y se considera un lugar sagrado que todos los coreanos deberían visitar
 para rendir homenaje a su espíritu eterno.`,
+
+        desc_vi: `Nằm ở Byeongcheon-myeon, Cheonan, Khu di tích Yu Gwan-sun tưởng nhớ tinh thần cao cả và lòng yêu nước của Yu Gwan-sun, một nữ anh hùng dân tộc đã sống như ngọn lửa rực cháy trong cuộc đấu tranh giành độc lập của Hàn Quốc dưới thời kỳ thuộc địa Nhật Bản.
+
+Khu di tích bao gồm nơi sinh, nhà tưởng niệm, đền thờ và tháp báo hiệu. Đây được coi là một thánh địa lịch sử mà mọi người dân Hàn Quốc nên đến thăm ít nhất một lần để tôn vinh tinh thần bất diệt của bà.`,
+
+        desc_tl: `Matatagpuan sa Byeongcheon-myeon, Cheonan, ang Yu Gwan-sun Memorial Site ay gumugunita sa dakilang diwa at makabayang debosyon ni Yu Gwan-sun, isang pambansang bayani na namuhay tulad ng isang nagliliyab na apoy sa pakikibaka para sa kalayaan ng Korea noong panahon ng pananakop ng mga Hapones.
+
+Kabilang sa lugar ang kanyang sinilangan, isang bulwagan ng alaala, dambana, at tore ng sulo. Itinuturing itong isang sagradong lugar ng kasaysayan na dapat bisitahin ng bawat Koreano kahit minsan upang magbigay-pugay sa kanyang walang hanggang diwa.`,
 
         subtitle: `유관순 열사의 숭고한 뜻이 깃든 역사적 성지입니다.`,
 
@@ -120,6 +135,19 @@ permitiendo a los visitantes disfrutar de la naturaleza y la historia de la mont
 En su ladera se encuentra el Gran Buda de Bronce,
 creado con el deseo de la reunificación de Corea,
 que recibe a los visitantes con una sonrisa serena.`,
+
+        desc_vi: `Núi Taejosan, được mệnh danh là ngọn núi hộ mệnh của Cheonan, lấy tên từ một giai thoại lịch sử khi Vua Taejo Wang Geon, người sáng lập triều đại Goryeo, đã khảo sát khu vực này khi dẫn quân đi qua.
+
+Con đường Wanggeon-gil men theo dấu chân của ông, cho phép du khách trải nghiệm cả vẻ đẹp thiên nhiên và di sản lịch sử của ngọn núi.
+
+Nằm trên sườn núi là Đại Tượng Phật Ngồi bằng đồng hùng vĩ, được tạo ra với niềm hy vọng thống nhất Hàn Quốc, chào đón du khách bằng một nụ cười hiền hậu.`,
+
+        desc_tl: `Ang Bundok Taejosan, na kilala bilang bundok na tagapagbantay ng Cheonan, ay nakuha ang pangalan nito mula sa isang makasaysayang anekdota kung saan ininspeksyon ni Haring Taejo Wang Geon, ang nagtatag ng Dinastiyang Goryeo, ang lugar habang pinamumunuan ang kanyang mga hukbo.
+
+Ang Wanggeon-gil Trail ay sumusunod sa kanyang mga yapak, na nagpapahintulot sa mga bisita na maranasan ang parehong magandang tanawin ng bundok at ang makasaysayang pamana nito.
+
+Matatagpuan sa mga dalisdis nito ang maringal na Great Bronze Seated Buddha, na nilikha na may pag-asa para sa muling pagkakaisa ng Korea, na bumabati sa mga bisita nang may mahinahong ngiti.`,
+
         subtitle: `고려 태조 왕건의 발자취를 따라 걷는 
         태조산 왕건길입니다.`,
 
@@ -153,6 +181,15 @@ and exquisite craftsmanship, leaving view-ers in awe of its majesty.`,
 el Monumento de Bongseon Honggyeongsa es un Tesoro Nacional de Corea,
 que representa el más alto nivel del arte en piedra de la era Goryeo,
 con una escala majestuosa y tallados detallados que impresionan a los visitantes.`,
+
+        desc_vi: `Nằm tại Daehong-ri, Seobuk-gu, Cheonan, Bia Bongseon Honggyeongsa là một di sản văn hóa quý giá được chỉ định là Bảo vật Quốc gia của Hàn Quốc. Nó thể hiện trình độ nghệ thuật và ý nghĩa lịch sử cao nhất mà một tượng đài bằng đá của triều đại Goryeo có thể đạt được.
+
+Mặc dù thuật ngữ "bi ký" (galgibi) thường đề cập đến các tấm bia đá quy mô nhỏ hơn, nhưng di tích này gây ấn tượng với kích thước to lớn và sự khéo léo tinh xảo, khiến người xem phải kinh ngạc trước vẻ uy nghi của nó.`,
+
+        desc_tl: `Matatagpuan sa Daehong-ri, Seobuk-gu, Cheonan, ang Bongseon Honggyeongsa Stele ay isang yamang pangkultura na itinalaga bilang Pambansang Kayamanan ng Korea. Sinasalamin nito ang pinakamataas na antas ng sining at kahalagahan sa kasaysayan na maaaabot ng isang batong monumento ng Dinastiyang Goryeo.
+
+Bagaman ang terminong "stele" (galgibi) ay karaniwang tumutukoy sa mas maliit na mga tapyas na bato, ang monumentong ito ay kahanga-hanga sa laki at katangi-tanging pagkakayari nito, na nag-iiwan sa mga manonood ng pagkamangha sa kamahalan nito.`,
+
         subtitle: `고려시대의 예술과 역사적 가치를 간직한 국보, 
         봉선홍경사 갈기비입니다.`,
 

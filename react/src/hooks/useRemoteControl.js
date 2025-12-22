@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 
-const SERVER_URL = 'http://localhost:5000'; // 리모컨 서버 주소
+const SERVER_URL = 'https://us-api.hananet.co.kr'; // 리모컨 서버 주소
 
 export function useRemoteControl() {
     useEffect(() => {
@@ -23,7 +23,7 @@ export function useRemoteControl() {
 
         const connect = () => {
             console.log(`[Remote] 서버(${SERVER_URL}) 연결 시도...`);
-            eventSource = new EventSource(`${SERVER_URL}/events/kiosk-control`);
+            eventSource = new EventSource(`${SERVER_URL}/api/events/kiosk-control`);
 
             eventSource.onopen = () => {
                 console.log("✅ [Remote] 서버와 연결되었습니다!");

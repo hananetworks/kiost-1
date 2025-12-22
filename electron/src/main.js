@@ -114,18 +114,27 @@ app.whenReady().then(async () => {
         try {
             log.info("[Main] Python/AI 엔진 점검 시작...");
             let pyPath;
+
             if (app.isPackaged) {
+                // [배포 모드] 설치된 파이썬 사용
                 pyPath = await ensurePythonEnvironment(win);
             } else {
+                // [개발 모드] ★수정됨★
+                // 프로젝트 루트에 있는 가상환경(.venv)의 python.exe를 사용합니다.
+                // (main.js 위치에 따라 '../' 개수는 조절이 필요할 수 있습니다.)
 
-                const LOCAL_APP_DATA = process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
-                // 주의: 폴더명 'MAXEE_promotional'은 pythonBootstrap.js와 글자 하나라도 틀리면 안 됩니다.
-                const APP_LOCAL_PATH = path.join(LOCAL_APP_DATA, 'MAXEE_promotional');
+                // 예: electron/main.js 에 있다면 -> ../../.venv
+                pyPath = path.join(__dirname, '..', '..', 'venv', 'Scripts', 'python.exe');
 
-                pyPath = path.join(APP_LOCAL_PATH, 'python-env', 'kiosk_python.exe');
+                // 만약 위 경로가 아니면, 현재 작업 디렉토리(cwd) 기준으로 찾기 시도
+                if (!require('fs').existsSync(pyPath)) {
+                    pyPath = path.join(process.cwd(), 'venv', 'Scripts', 'python.exe');
+                }
+
+                log.info(`[Main] 개발 모드: 로컬 가상환경 사용 -> ${pyPath}`);
             }
 
-            // 파이썬 서버 시작 (여기서 에러나도 catch로 넘어감)
+            // 파이썬 서버 시작
             initializePythonServices(win, pyPath);
             log.info("[Main] Python 서비스 시작 완료.");
 

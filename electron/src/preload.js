@@ -3,14 +3,13 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('electronAPI', {
 
     // ============================================================
-    // ✅ [핵심 추가] 업데이트 및 파이썬 다운로드 신호 수신용 (이게 없어서 안 떴음)
+    // ✅ [수신] Main -> Renderer (이벤트 듣기)
     // ============================================================
     on: (channel, func) => {
         const validChannels = [
-            // 🚨 [필수] 업데이트 관련 채널
+            // 업데이트 및 설치 관련
             'update-checking', 'update-available', 'update-not-available',
             'download-progress', 'update-downloaded', 'update-error',
-            // 🚨 [필수] Python 다운로드 관련 채널
             'python-download-start', 'python-download-progress',
             'python-extracting', 'python-download-complete', 'python-download-error',
 
@@ -20,24 +19,37 @@ contextBridge.exposeInMainWorld('electronAPI', {
         ];
 
         if (validChannels.includes(channel)) {
-            const subscription = (event, ...args) => {
-                // console.log(`📡 [Preload] 신호 수신: ${channel}`, args); // 디버깅용
-                func(...args);
-            };
+            const subscription = (event, ...args) => func(...args);
             ipcRenderer.on(channel, subscription);
             return () => ipcRenderer.removeListener(channel, subscription);
         }
     },
 
-    // --- [2] 송신 (Renderer -> Main) ---
+    // ============================================================
+    // ✅ [송신] Renderer -> Main (단방향, 결과 안 기다림)
+    // ============================================================
     send: (channel, data) => {
-        const validChannels = ['quit-and-install', 'python-download-start', 'start-speech-stream', 'stop-speech-stream', 'stt:submit-for-ai', 'tts:command', 'app:inactivity-status', 'speech:audio-chunk'];
+        const validChannels = [
+            'quit-and-install', 'python-download-start',
+            'start-speech-stream', 'stop-speech-stream',
+            'stt:submit-for-ai', 'tts:command',
+            'app:inactivity-status', 'speech:audio-chunk'
+        ];
         if (validChannels.includes(channel)) {
             ipcRenderer.send(channel, data);
         }
     },
 
-    // --- [기존 기능 유지] ---
+    // ============================================================
+    // ✅ [핵심 추가] 양방향 통신 (요청하고 결과 기다림)
+    // ============================================================
+    // React에서 await window.electronAPI.invoke('tts-request', ...) 할 때 사용됨
+    invoke: (channel, data) => ipcRenderer.invoke(channel, data),
+
+
+    // ============================================================
+    // [기존 편의 함수들 유지]
+    // ============================================================
     toggleDevTools: () => ipcRenderer.send('toggle-debug'),
     refresh: () => ipcRenderer.send('refresh'),
 
@@ -68,7 +80,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
     // STT 결과를 AI로 넘기는 전용 함수
     submitSttForAI: (sttText, conversationHistory, lang) => {
-        // lang 인자 추가하여 백엔드 전송
         ipcRenderer.send('stt:submit-for-ai', { sttText, conversationHistory, lang });
     },
 
@@ -93,7 +104,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
         return () => ipcRenderer.removeListener('speech:error', listener);
     },
 
-    // TTS 관련
+    // TTS 관련 (호환성 유지)
     sendTtsCommand: (language, commandObject) => {
         ipcRenderer.send('tts:command', { lang: language, command: commandObject });
     },

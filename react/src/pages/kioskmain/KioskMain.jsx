@@ -24,13 +24,13 @@ import history3 from "../../assets/images/history_3.jpg";
 import history4 from "../../assets/images/history_4.jpg";
 
 export default function KioskMain({
-                                      setContrastLevel,
-                                      zoomLevel,
-                                      setZoomLevel,
-                                      voiceSettings,
-                                      setVoiceSettings,
-                                      // isSpeaking prop은 useTts 내부 관리로 인해 선택적 사용
-                                  }) {
+    setContrastLevel,
+    zoomLevel,
+    setZoomLevel,
+    voiceSettings,
+    setVoiceSettings,
+    // isSpeaking prop은 useTts 내부 관리로 인해 선택적 사용
+}) {
     const navigate = useNavigate();
     const { tab } = useParams();
     const currentTab = tab || "nature";
@@ -44,28 +44,60 @@ export default function KioskMain({
 
     // 3. 안내 멘트 재생
     useEffect(() => {
-        // 한국어/영어만 TTS 재생 (나머지 언어는 지원 안 함)
-        if (normalizedLang !== 'ko' && normalizedLang !== 'en') {
-            stopTts();
-            return;
+        const isNature = currentTab === 'nature';
+        let textToSpeak = "";
+
+        // 언어별 멘트 설정
+        switch (normalizedLang) {
+            case 'ko': // 한국어
+                textToSpeak = isNature
+                    ? "천안 8경의 아름다운 자연 명소를 소개합니다. 원하시는 장소를 선택해주세요."
+                    : "천안의 유서 깊은 역사 명소를 소개합니다. 원하시는 장소를 선택해주세요.";
+                break;
+
+            case 'en': // 영어
+                textToSpeak = isNature
+                    ? "Introducing the beautiful natural sights of Cheonan. Please select a place."
+                    : "Introducing the historic sites of Cheonan. Please select a place.";
+                break;
+
+            case 'ja': // 일본어
+                textToSpeak = isNature
+                    ? "天安八景の美しい自然の名所を紹介します。ご希望の場所を選択してください。"
+                    : "天安の由緒ある歴史的名所を紹介します。ご希望の場所を選択してください。";
+                break;
+
+            case 'zh': // 중국어
+                textToSpeak = isNature
+                    ? "为您介绍天安八景的美丽自然名胜。请选择您想要的地点。"
+                    : "为您介绍天安悠久的历史名胜。请选择您想要的地点。";
+                break;
+
+            case 'vi': // 🇻🇳 베트남어 (Piper TTS)
+                textToSpeak = isNature
+                    ? "Giới thiệu những điểm tham quan thiên nhiên tuyệt đẹp của Cheonan. Vui lòng chọn một địa điểm."
+                    : "Giới thiệu những di tích lịch sử của Cheonan. Vui lòng chọn một địa điểm.";
+                break;
+
+            case 'tl': // 🇵🇭 타갈로그어 (Sherpa TTS)
+            case 'fil': // 🇵🇭 필리핀어
+                textToSpeak = isNature
+                    ? "Ipinapakilala ang mga magagandang tanawin sa kalikasan ng Cheonan. Mangyaring pumili ng lugar."
+                    : "Ipinapakilala ang mga makasaysayang lugar ng Cheonan. Mangyaring pumili ng lugar.";
+                break;
+
+            default: // 그 외
+                textToSpeak = isNature
+                    ? "Introducing the beautiful natural sights of Cheonan. Please select a place."
+                    : "Introducing the historic sites of Cheonan. Please select a place.";
+                break;
         }
 
-        const isNature = currentTab === 'nature';
-        const textKo = isNature
-            ? "천안 8경의 아름다운 자연 명소를 소개합니다. 원하시는 장소를 선택해주세요."
-            : "천안의 유서 깊은 역사 명소를 소개합니다. 원하시는 장소를 선택해주세요.";
-
-        const textEn = isNature
-            ? "Introducing the beautiful natural sights of Cheonan. Please select a place."
-            : "Introducing the historic sites of Cheonan. Please select a place.";
-
-        const textToSpeak = isKorean ? textKo : textEn;
-
-        // 페이지 진입 시 약간 딜레이 후 재생
+        // ★ 딜레이 없이 즉시 실행 (ttsText → textToSpeak으로 수정)
         const timer = setTimeout(() => {
-            stopTts(); // 이전 오디오 끊고
-            addText(textToSpeak, true); // 강제 재생
-        }, 500);
+            stopTts();
+            addText(textToSpeak, true);  // ✅ 변수명 수정
+        }, 50);
 
         return () => {
             clearTimeout(timer);
@@ -84,22 +116,104 @@ export default function KioskMain({
         if (normalizedLang === 'zh') return mainCn;
         if (normalizedLang === 'ja') return mainJp;
         if (normalizedLang === 'es') return mainEs;
+        if (normalizedLang === 'vi') return mainEn; // 베트남어는 영어 배너 사용
+        if (normalizedLang === 'tl' || normalizedLang === 'fil') return mainEn; // 필리핀어는 영어 배너 사용
         return mainKo;
     };
 
-    // 6. 데이터 (다국어 필드 포함)
+    // 6. 데이터 (다국어 필드 포함 - 베트남어, 필리핀어 추가)
     const natureItems = [
-        { id: 1, title: "광덕산", title_en: "Gwangdeoksan Mountain", title_cn: "光德山", title_jp: "クァンデク山", title_es: "Monte Gwangdeok", img: nature1 },
-        { id: 2, title: "천안삼거리공원", title_en: "Cheonan Samgeori Park", title_cn: "天安三岔路公园", title_jp: "チョナン三叉路公園", title_es: "Parque Samgeori de Cheonan", img: nature2 },
-        { id: 3, title: "성성호수공원", title_en: "Seongseong Lake Park", title_cn: "城成湖公园", title_jp: "ソンソン湖公園", title_es: "Parque del Lago Seongseong", img: nature3 },
-        { id: 4, title: "태학산자연휴양림", title_en: "Taehaksan Recreation Forest", title_cn: "太鹤山自然休养林", title_jp: "テハク山自然休養林", title_es: "Bosque Recreativo Taehaksan", img: nature4 },
+        {
+            id: 1,
+            title: "광덕산",
+            title_en: "Gwangdeoksan Mountain",
+            title_cn: "光德山",
+            title_jp: "クァンデク山",
+            title_es: "Monte Gwangdeok",
+            title_vi: "Núi Gwangdeoksan", // 🇻🇳
+            title_tl: "Bundok Gwangdeoksan", // 🇵🇭
+            img: nature1
+        },
+        {
+            id: 2,
+            title: "천안삼거리공원",
+            title_en: "Cheonan Samgeori Park",
+            title_cn: "天安三岔路公园",
+            title_jp: "チョナン三叉路公園",
+            title_es: "Parque Samgeori de Cheonan",
+            title_vi: "Công viên Cheonan Samgeori", // 🇻🇳
+            title_tl: "Parke ng Cheonan Samgeori", // 🇵🇭
+            img: nature2
+        },
+        {
+            id: 3,
+            title: "성성호수공원",
+            title_en: "Seongseong Lake Park",
+            title_cn: "城成湖公园",
+            title_jp: "ソンソン湖公園",
+            title_es: "Parque del Lago Seongseong",
+            title_vi: "Công viên Hồ Seongseong", // 🇻🇳
+            title_tl: "Parke ng Lawa ng Seongseong", // 🇵🇭
+            img: nature3
+        },
+        {
+            id: 4,
+            title: "태학산자연휴양림",
+            title_en: "Taehaksan Recreation Forest",
+            title_cn: "太鹤山自然休养林",
+            title_jp: "テハク山自然休養林",
+            title_es: "Bosque Recreativo Taehaksan",
+            title_vi: "Rừng Nghỉ Dưỡng Taehaksan", // 🇻🇳
+            title_tl: "Gubat na Taehaksan", // 🇵🇭
+            img: nature4
+        },
     ];
 
     const historyItems = [
-        { id: 1, title: "독립기념관", title_en: "Independence Hall", title_cn: "独立纪念馆", title_jp: "独立記念館", title_es: "Salón de la Independencia", img: history1 },
-        { id: 2, title: "유관순열사 사적지", title_en: "Yu Gwan-sun's Historic Site", title_cn: "柳宽顺烈士史迹地", title_jp: "柳寛順烈士の史跡地", title_es: "Sitio Histórico de Yu Gwan-sun", img: history2 },
-        { id: 3, title: "태조산왕건길", title_en: "Taejosan Wanggeon Trail", title_cn: "太祖山王建路", title_jp: "太祖山ワンゴン道", title_es: "Sendero Wanggeon", img: history3 },
-        { id: 4, title: "봉선홍경사갈기비", title_en: "Bongseon Honggyeongsa Stele", title_cn: "奉先洪庆寺碑", title_jp: "奉先洪慶寺碑", title_es: "Estela del Templo Honggyeongsa", img: history4 },
+        {
+            id: 1,
+            title: "독립기념관",
+            title_en: "Independence Hall",
+            title_cn: "独立纪念馆",
+            title_jp: "独立記念館",
+            title_es: "S alón de la Independencia",
+            title_vi: "Tòa nhà Độc lập", // 🇻🇳
+            title_tl: "Bulwagang Kalayaan", // 🇵🇭
+            img: history1
+        },
+        {
+            id: 2,
+            title: "유관순열사 사적지",
+            title_en: "Yu Gwan-sun's Historic Site",
+            title_cn: "柳宽顺烈士史迹地",
+            title_jp: "柳寛順烈士の史跡地",
+            title_es: "Sitio Histórico de Yu Gwan-sun",
+            title_vi: "Di tích Yu Gwan-sun", // 🇻🇳
+            title_tl: "Historikal na Lugar ni Yu Gwan-sun", // 🇵🇭
+            img: history2
+        },
+        {
+            id: 3,
+            title: "태조산왕건길",
+            title_en: "Taejosan Wanggeon Trail",
+            title_cn: "太祖山王建路",
+            title_jp: "太祖山ワンゴン道",
+            title_es: "Sendero Wanggeon",
+            title_vi: "Đường mòn Taejosan Wanggeon", // 🇻🇳
+            title_tl: "Landas ng Taejosan Wanggeon", // 🇵🇭
+            img: history3
+        },
+        {
+            id: 4,
+            title: "봉선홍경사갈기비",
+            title_en: "Bongseon Honggyeongsa Stele",
+            title_cn: "奉先洪庆寺碑",
+            title_jp: "奉先洪慶寺碑",
+            title_es: "Estela del Templo Honggyeongsa",
+            title_vi: "Bia đá Bongseon Honggyeongsa", // 🇻🇳
+            title_tl: "Estela ng Templo Honggyeongsa", // 🇵🇭
+            img: history4
+        },
     ];
 
     const items = currentTab === "history" ? historyItems : natureItems;
@@ -110,6 +224,8 @@ export default function KioskMain({
         if (normalizedLang === 'zh') return item.title_cn;
         if (normalizedLang === 'ja') return item.title_jp;
         if (normalizedLang === 'es') return item.title_es;
+        if (normalizedLang === 'vi') return item.title_vi; // 🇻🇳
+        if (normalizedLang === 'tl' || normalizedLang === 'fil') return item.title_tl; // 🇵🇭
         return item.title;
     };
 
@@ -131,21 +247,19 @@ export default function KioskMain({
                     <button
                         ref={firstTabRef}
                         onClick={() => navigate("/kiosk/main/nature")}
-                        className={`px-16 py-4 rounded-full text-3xl lg:text-4xl xl:text-5xl font-bold transition ${
-                            currentTab === "nature"
-                                ? "bg-gray-800 text-white ring-4 ring-blue-500 shadow-lg"
-                                : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-                        } focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-400`}
+                        className={`px-16 py-4 rounded-full text-3xl lg:text-4xl xl:text-5xl font-bold transition ${currentTab === "nature"
+                            ? "bg-gray-800 text-white ring-4 ring-blue-500 shadow-lg"
+                            : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                            } focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-400`}
                     >
                         자연
                     </button>
                     <button
                         onClick={() => navigate("/kiosk/main/history")}
-                        className={`px-16 py-4 rounded-full text-3xl lg:text-4xl xl:text-5xl font-bold transition ${
-                            currentTab === "history"
-                                ? "bg-gray-800 text-white ring-4 ring-blue-500 shadow-lg"
-                                : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-                        } focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-400`}
+                        className={`px-16 py-4 rounded-full text-3xl lg:text-4xl xl:text-5xl font-bold transition ${currentTab === "history"
+                            ? "bg-gray-800 text-white ring-4 ring-blue-500 shadow-lg"
+                            : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                            } focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-400`}
                     >
                         역사
                     </button>
