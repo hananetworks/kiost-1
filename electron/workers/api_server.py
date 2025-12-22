@@ -1,10 +1,19 @@
 import sys
+import os
+
+# ▼▼▼ [이 3줄이 반드시 추가되어야 합니다!] ▼▼▼
+# 현재 파일(api_server.py)이 있는 폴더 위치를 알아내서, 파이썬 검색 경로에 강제로 집어넣습니다.
+current_dir = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(current_dir)
+# ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
 import uuid
 import threading
 from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 import uvicorn
+
 import engine_core
 
 print("[API] 스트리밍 서버 시작...", flush=True)
