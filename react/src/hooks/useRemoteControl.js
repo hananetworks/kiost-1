@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 
-const SERVER_URL = 'https://us-api.hananet.co.kr'; // 리모컨 서버 주소
+const SERVER_URL = 'https://us-api.hananet'; // 리모컨 서버 주소
 
 export function useRemoteControl() {
     useEffect(() => {
