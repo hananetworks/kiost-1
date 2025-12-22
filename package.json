@@ -1,6 +1,6 @@
 {
   "name": "maxee-promotional",
-  "version": "1.4.3",
+  "version": "1.4.4",
   "private": true,
   "description": "hana US kiosk-first > object: ticket",
   "main": "electron/src/main.js",
