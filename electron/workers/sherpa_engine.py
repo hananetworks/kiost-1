@@ -11,11 +11,25 @@ import numpy as np
 import soundfile as sf
 from typing import Optional, Generator
 import sherpa_onnx
-import numpy as np
+import sys # sys 추가 필요
 
+# ==============================================================================
+# [SMART PATH] 개발 모드 vs 배포 모드(kiosk_python.exe) 경로 자동 감지
+# ==============================================================================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CACHE_DIR = os.path.join(BASE_DIR, "..", "cache", "audio")
-MODELS_DIR = os.path.join(BASE_DIR, "..", "cache", "sherpa_models")
+
+if 'kiosk_python.exe' in sys.executable:
+    # [배포 모드]
+    # 모델 위치: .../python-env/tts_models/sherpa_models
+    base_env_dir = os.path.dirname(sys.executable)
+    MODELS_DIR = os.path.join(base_env_dir, 'tts_models', 'sherpa_models')
+    print(f"[Sherpa] 배포 모드 감지: 모델 경로 -> {MODELS_DIR}", flush=True)
+else:
+    # [개발 모드]
+    MODELS_DIR = os.path.join(BASE_DIR, "..", "cache", "sherpa_models")
+    print(f"[Sherpa] 개발 모드 감지: 모델 경로 -> {MODELS_DIR}", flush=True)
+
 os.makedirs(CACHE_DIR, exist_ok=True)
 os.makedirs(MODELS_DIR, exist_ok=True)
 

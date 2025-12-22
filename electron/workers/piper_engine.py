@@ -12,12 +12,31 @@ import soundfile as sf
 from piper import PiperVoice
 from typing import Optional, Generator
 import struct
+import sys  # sys 추가 필요
 
+# ==============================================================================
+# [SMART PATH] 개발 모드 vs 배포 모드(kiosk_python.exe) 경로 자동 감지
+# ==============================================================================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# 캐시(생성된 오디오)는 쓰기 권한이 필요하므로 AppData/Temp 등이 안전하지만, 일단 기존 유지
 CACHE_DIR = os.path.join(BASE_DIR, "..", "cache", "audio")
-MODELS_DIR = os.path.join(BASE_DIR, "..", "cache", "piper_models")
+
+if 'kiosk_python.exe' in sys.executable:
+    # [배포 모드] .../python-env/kiosk_python.exe
+    # 모델 위치: .../python-env/tts_models/piper_models
+    base_env_dir = os.path.dirname(sys.executable)
+    MODELS_DIR = os.path.join(base_env_dir, 'tts_models', 'piper_models')
+    print(f"[Piper] 배포 모드 감지: 모델 경로 -> {MODELS_DIR}", flush=True)
+else:
+    # [개발 모드]
+    MODELS_DIR = os.path.join(BASE_DIR, "..", "cache", "piper_models")
+    print(f"[Piper] 개발 모드 감지: 모델 경로 -> {MODELS_DIR}", flush=True)
+
 os.makedirs(CACHE_DIR, exist_ok=True)
-os.makedirs(MODELS_DIR, exist_ok=True)
+# 배포 모드에서는 MODELS_DIR가 이미 존재해야 함 (deploy.yml이 다운로드함)
+if not os.path.exists(MODELS_DIR):
+    os.makedirs(MODELS_DIR, exist_ok=True)
 
 # Language to Piper voice mapping
 # Using lightweight, quality voices from Piper repository
