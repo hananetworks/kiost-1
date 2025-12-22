@@ -101,6 +101,9 @@ async function downloadWithRetry(url, destPath, token, win, retries = MAX_RETRIE
 async function ensurePythonEnvironment(win) {
     if (win) win.webContents.send('python-check-start');
 
+    // [F] 시작 전 사전 청소 (혹시 모를 잔여물 제거)
+    cleanUpMeCabDictionary();
+
     // 1. 현재 버전 확인
     let currentVersion = 'unknown';
     if (fs.existsSync(VERSION_FILE)) {
@@ -225,8 +228,6 @@ async function ensurePythonEnvironment(win) {
         // -----------------------------------------------------------
         // [E] 다음 업데이트를 위한 캐시 갱신 (중요!)
         // -----------------------------------------------------------
-        // 방금 받은(또는 만든) Zip 파일을 'python-env-full.zip'으로 이름 바꿔서 보관
-        // 그래야 다음 버전에 Patch 모드를 쓸 수 있음.
         try {
             if (fs.existsSync(CACHED_FULL_ZIP)) fs.unlinkSync(CACHED_FULL_ZIP);
             fs.renameSync(finalZipPath, CACHED_FULL_ZIP);
@@ -234,6 +235,11 @@ async function ensurePythonEnvironment(win) {
         } catch (e) {
             log.warn('캐시 파일 갱신 실패(다음엔 Full 다운로드 됨): ' + e.message);
         }
+
+        // -----------------------------------------------------------
+        // [F] MeCab 충돌 방지: 업데이트 직후 unidic 폴더 강제 삭제
+        // -----------------------------------------------------------
+        cleanUpMeCabDictionary();
 
         log.info('[PythonBootstrap] 모든 업데이트 완료!');
         if (win) win.webContents.send('python-download-complete');
@@ -244,6 +250,9 @@ async function ensurePythonEnvironment(win) {
 
         // [Fallback] 실패 시 기존 버전이라도 실행 시도
         if (fs.existsSync(PYTHON_EXE)) {
+            // 실행 전 한 번 더 청소
+            cleanUpMeCabDictionary();
+
             log.warn(`⚠️ 업데이트 실패. 기존 버전을 사용합니다.`);
             if (win) {
                 win.webContents.send('python-download-progress', 100);
@@ -255,6 +264,29 @@ async function ensurePythonEnvironment(win) {
 
         if (win) win.webContents.send('python-download-error', error.message);
         throw error;
+    }
+}
+
+/**
+ * MeCab 충돌 방지를 위해 'unidic' 폴더를 삭제하고 'unidic-lite'만 남김
+ */
+function cleanUpMeCabDictionary() {
+    try {
+        const sitePackages = path.join(PYTHON_ENV_PATH, 'Lib', 'site-packages');
+        const unidicPath = path.join(sitePackages, 'unidic');
+        const unidicLitePath = path.join(sitePackages, 'unidic_lite');
+
+        // 1. unidic-lite가 존재하는지 확인 (필수 조건)
+        if (fs.existsSync(unidicLitePath)) {
+            // 2. 충돌을 일으키는 unidic 폴더가 있다면 삭제
+            if (fs.existsSync(unidicPath)) {
+                log.info(`🛠️ [MeCab Fix] 충돌 유발 폴더 감지됨. 삭제 중: ${unidicPath}`);
+                fs.rmSync(unidicPath, { recursive: true, force: true });
+                log.info(`✅ [MeCab Fix] 삭제 완료. 이제 일본어 TTS가 정상 작동합니다.`);
+            }
+        }
+    } catch (e) {
+        log.warn(`⚠️ [MeCab Fix] 정리 중 오류 발생 (무시 가능): ${e.message}`);
     }
 }
 
