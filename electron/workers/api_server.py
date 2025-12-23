@@ -15,44 +15,40 @@ from pydantic import BaseModel
 import uvicorn
 
 # ==================================================================
-# ★★★ [HotFix] 한국어 G2P (g2pkk) 사전 경로 강제 설정 (수정판) ★★★
+# ★★★ [HotFix] 한국어 G2P (g2pkk) 초기화 로직 완전 대체 ★★★
 # ==================================================================
 try:
     import MeCab
     from g2pkk import G2p
     import mecab_ko_dic
 
-    # 1. mecab-ko-dic이 설치된 실제 경로 찾기
+    # 1. mecab-ko-dic 경로 확인
     DIC_PATH = mecab_ko_dic.DICDIR
-    print(f"[HotFix] Mecab-ko-dic 경로 발견: {DIC_PATH}", flush=True)
+    print(f"[HotFix] Mecab-ko-dic 경로: {DIC_PATH}", flush=True)
 
-    # 2. G2p 클래스 생성자를 가로채서(Monkey Patch), 내부 MeCab을 교체
-    original_init = G2p.__init__
-
+    # 2. G2p 생성자를 완전히 덮어쓰기 (기존 코드 실행 안 함)
     def new_init(self, *args, **kwargs):
-        # 혹시라도 mecab_path가 인자로 들어오면 제거 (에러 방지)
-        if 'mecab_path' in kwargs:
-            del kwargs['mecab_path']
+        # mecab_path 인자 무시
+        if 'mecab_path' in kwargs: del kwargs['mecab_path']
 
-        # 1. 원래 초기화 실행 (일단 Unidic이나 기본값으로 켜짐)
-        original_init(self, *args, **kwargs)
-
-        # 2. 내부 MeCab 객체를 우리가 찾은 한국어 사전으로 강제 교체!
+        # [핵심] 기존 초기화(original_init) 호출 없이 바로 강제 연결
+        # 이렇게 해야 mecabrc 없음 에러를 피할 수 있음
         try:
-            print(f"[HotFix] G2p 내부 MeCab을 '{DIC_PATH}'로 교체합니다.", flush=True)
+            print(f"[HotFix] G2p 초기화: mecab-ko-dic으로 직접 연결 중...", flush=True)
             self.mecab = MeCab.Tagger(f'-d "{DIC_PATH}"')
+            print("[HotFix] G2p 초기화 성공!", flush=True)
         except Exception as e:
-            print(f"[HotFix] MeCab 교체 실패: {e}", flush=True)
+            print(f"[HotFix] 초기화 실패 (심각): {e}", flush=True)
+            raise e
 
     G2p.__init__ = new_init
-    print("[HotFix] g2pkk 패치 적용 완료 (객체 교체 방식)", flush=True)
+    print("[HotFix] g2pkk 패치 적용 완료 (초기화 로직 대체)", flush=True)
 
 except ImportError:
-    print("[HotFix] mecab-ko-dic 또는 g2pkk를 찾을 수 없습니다. (한국어 TTS 실패 가능성)", flush=True)
+    print("[HotFix] 필수 라이브러리 누락 (mecab-ko-dic 등)", flush=True)
 except Exception as e:
-    print(f"[HotFix] 패치 실패: {e}", flush=True)
+    print(f"[HotFix] 패치 적용 중 에러: {e}", flush=True)
 # ==================================================================
-
 
 import engine_core  # <--- 이 친구가 실행되기 전에 위 패치가 끝나야 합니다.
 
