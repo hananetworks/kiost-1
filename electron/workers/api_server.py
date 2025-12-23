@@ -14,7 +14,37 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 import uvicorn
 
-import engine_core
+# ==================================================================
+# ★★★ [HotFix] 한국어 G2P (g2pkk) 사전 경로 강제 설정 ★★★
+# (engine_core 임포트 전에 실행되어야 안전합니다)
+# ==================================================================
+try:
+    import MeCab
+    from g2pkk import G2p
+    import mecab_ko_dic
+
+    # 1. mecab-ko-dic이 설치된 실제 경로 찾기
+    DIC_PATH = mecab_ko_dic.DICDIR
+    print(f"[HotFix] Mecab-ko-dic 경로 발견: {DIC_PATH}", flush=True)
+
+    # 2. G2p 클래스 생성자를 가로채서(Monkey Patch), 사전 경로를 강제로 주입
+    original_init = G2p.__init__
+
+    def new_init(self, *args, **kwargs):
+        kwargs['mecab_path'] = DIC_PATH
+        original_init(self, *args, **kwargs)
+
+    G2p.__init__ = new_init
+    print("[HotFix] g2pkk에 mecab-ko-dic 강제 주입 완료!", flush=True)
+
+except ImportError:
+    print("[HotFix] mecab-ko-dic 또는 g2pkk를 찾을 수 없습니다. (한국어 TTS 실패 가능성)", flush=True)
+except Exception as e:
+    print(f"[HotFix] 패치 실패: {e}", flush=True)
+# ==================================================================
+
+
+import engine_core  # <--- 이 친구가 실행되기 전에 위 패치가 끝나야 합니다.
 
 print("[API] 스트리밍 서버 시작...", flush=True)
 
@@ -32,7 +62,7 @@ class TTSRequest(BaseModel):
 # ==================================================================
 def preload_models():
     print("[API] 🚀 모든 언어 모델 예열(Warm-up) 시작... (CPU가 바빠질 수 있습니다)", flush=True)
-    
+
     # Tier 1: MeloTTS 예열
     langs = ['KR', 'EN', 'JP', 'ZH']
     for lang in langs:
@@ -51,7 +81,7 @@ def preload_models():
             print("[API] ✅ Piper TTS 예열 완료!", flush=True)
         except Exception as e:
             print(f"[API] ⚠️ Piper 예열 실패: {e}", flush=True)
-    
+
     # Tier 3: Sherpa-ONNX 예열 (Filipino 등)
     if engine_core.SHERPA_AVAILABLE:
         print("[API] 🔥 Sherpa-ONNX 엔진 예열 중...", flush=True)
@@ -106,13 +136,13 @@ def live_stream(req_id: str):
 def tier_status():
     """Get status of all TTS tiers for debugging"""
     import tts_router
-    
+
     # Tier 1 - MeloTTS (Always available)
     tier1_status = {
         "loaded_languages": list(engine_core._models.keys()),
         "available": True,
     }
-    
+
     # Tier 2 - Piper TTS
     tier2_status = {
         "available": engine_core.PIPER_AVAILABLE,
@@ -123,7 +153,7 @@ def tier_status():
             tier2_status["loaded_voices"] = list(engine_core.piper_engine._loaded_voices.keys())
     except Exception as e:
         tier2_status["error"] = str(e)
-    
+
     # Tier 3 - Sherpa-ONNX (Safe error handling)
     tier3_status = {
         "available": engine_core.SHERPA_AVAILABLE,
@@ -135,7 +165,7 @@ def tier_status():
     except Exception as e:
         tier3_status["available"] = False
         tier3_status["error"] = f"Sherpa engine error: {str(e)}"
-    
+
     # Language routing
     language_routing = {}
     try:
@@ -143,14 +173,14 @@ def tier_status():
             language_routing[lang] = tts_router.get_tier_info(lang)
     except Exception as e:
         language_routing["error"] = str(e)
-    
+
     status = {
         "tier1_melotts": tier1_status,
         "tier2_piper": tier2_status,
         "tier3_sherpa": tier3_status,
         "language_routing": language_routing
     }
-    
+
     return status
 
 
