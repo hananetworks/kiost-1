@@ -15,8 +15,7 @@ from pydantic import BaseModel
 import uvicorn
 
 # ==================================================================
-# ★★★ [HotFix] 한국어 G2P (g2pkk) 사전 경로 강제 설정 ★★★
-# (engine_core 임포트 전에 실행되어야 안전합니다)
+# ★★★ [HotFix] 한국어 G2P (g2pkk) 사전 경로 강제 설정 (수정판) ★★★
 # ==================================================================
 try:
     import MeCab
@@ -27,15 +26,26 @@ try:
     DIC_PATH = mecab_ko_dic.DICDIR
     print(f"[HotFix] Mecab-ko-dic 경로 발견: {DIC_PATH}", flush=True)
 
-    # 2. G2p 클래스 생성자를 가로채서(Monkey Patch), 사전 경로를 강제로 주입
+    # 2. G2p 클래스 생성자를 가로채서(Monkey Patch), 내부 MeCab을 교체
     original_init = G2p.__init__
 
     def new_init(self, *args, **kwargs):
-        kwargs['mecab_path'] = DIC_PATH
+        # 혹시라도 mecab_path가 인자로 들어오면 제거 (에러 방지)
+        if 'mecab_path' in kwargs:
+            del kwargs['mecab_path']
+
+        # 1. 원래 초기화 실행 (일단 Unidic이나 기본값으로 켜짐)
         original_init(self, *args, **kwargs)
 
+        # 2. 내부 MeCab 객체를 우리가 찾은 한국어 사전으로 강제 교체!
+        try:
+            print(f"[HotFix] G2p 내부 MeCab을 '{DIC_PATH}'로 교체합니다.", flush=True)
+            self.mecab = MeCab.Tagger(f'-d "{DIC_PATH}"')
+        except Exception as e:
+            print(f"[HotFix] MeCab 교체 실패: {e}", flush=True)
+
     G2p.__init__ = new_init
-    print("[HotFix] g2pkk에 mecab-ko-dic 강제 주입 완료!", flush=True)
+    print("[HotFix] g2pkk 패치 적용 완료 (객체 교체 방식)", flush=True)
 
 except ImportError:
     print("[HotFix] mecab-ko-dic 또는 g2pkk를 찾을 수 없습니다. (한국어 TTS 실패 가능성)", flush=True)
