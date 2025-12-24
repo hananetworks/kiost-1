@@ -1,194 +1,431 @@
+# api_server.py (통합 서버)
 import sys
 import os
-
-# ▼▼▼ [이 3줄이 반드시 추가되어야 합니다!] ▼▼▼
-# 현재 파일(api_server.py)이 있는 폴더 위치를 알아내서, 파이썬 검색 경로에 강제로 집어넣습니다.
-current_dir = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(current_dir)
-# ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
-
+import asyncio
+import json
 import uuid
 import threading
-from fastapi import FastAPI
+import time
+import urllib.parse
+import numpy as np
+
+# ▼▼▼ [필수] 현재 경로 추가 ▼▼▼
+current_dir = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(current_dir)
+
+# ==================================================================
+# [FastAPI & Utils]
+# ==================================================================
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 import uvicorn
 
 # ==================================================================
-# ★★★ [HotFix] 한국어 G2P (g2pkk) 초기화 로직 완전 대체 ★★★
+# [TTS Engine Imports]
 # ==================================================================
+# ★★★ [HotFix] 한국어 G2P 완벽 호환 패치 (Fake Eunjeon + Spec Fix) ★★★
 try:
+    import types
     import MeCab
-    from g2pkk import G2p
     import mecab_ko_dic
+    from importlib.machinery import ModuleSpec
 
-    # 1. mecab-ko-dic 경로 확인
     DIC_PATH = mecab_ko_dic.DICDIR
-    print(f"[HotFix] Mecab-ko-dic 경로: {DIC_PATH}", flush=True)
+    if 'eunjeon' not in sys.modules:
+        fake_eunjeon = types.ModuleType("eunjeon")
+        fake_eunjeon.__spec__ = ModuleSpec(name="eunjeon", loader=None)
+        class FakeEunjeonMecab:
+            def __init__(self, dicpath=None): pass
+            def pos(self, text): return []
+            def morphs(self, text): return []
+        fake_eunjeon.Mecab = FakeEunjeonMecab
+        sys.modules["eunjeon"] = fake_eunjeon
 
-    # 2. G2p 생성자를 완전히 덮어쓰기 (기존 코드 실행 안 함)
+    class MecabWrapper:
+        def __init__(self, dic_path):
+            self.tagger = MeCab.Tagger(f'-d "{dic_path}" -r NUL')
+        def pos(self, text):
+            nodes = self.tagger.parseToNode(text)
+            result = []
+            while nodes:
+                if nodes.surface:
+                    try:
+                        pos_tag = nodes.feature.split(',')[0]
+                        result.append((nodes.surface, pos_tag))
+                    except: pass
+                nodes = nodes.next
+            return result
+        def morphs(self, text):
+            return [x[0] for x in self.pos(text)]
+
+    from g2pkk import G2p
+    original_init = G2p.__init__
     def new_init(self, *args, **kwargs):
-        # mecab_path 인자 무시
         if 'mecab_path' in kwargs: del kwargs['mecab_path']
-
-        # [핵심] 기존 초기화(original_init) 호출 없이 바로 강제 연결
-        # 이렇게 해야 mecabrc 없음 에러를 피할 수 있음
+        real_tagger = MeCab.Tagger
+        MeCab.Tagger = lambda *a, **k: MecabWrapper(DIC_PATH)
         try:
-            print(f"[HotFix] G2p 초기화: mecab-ko-dic으로 직접 연결 중...", flush=True)
-            self.mecab = MeCab.Tagger(f'-d "{DIC_PATH}"')
-            print("[HotFix] G2p 초기화 성공!", flush=True)
-        except Exception as e:
-            print(f"[HotFix] 초기화 실패 (심각): {e}", flush=True)
-            raise e
-
+            original_init(self, *args, **kwargs)
+        finally:
+            MeCab.Tagger = real_tagger
     G2p.__init__ = new_init
-    print("[HotFix] g2pkk 패치 적용 완료 (초기화 로직 대체)", flush=True)
-
 except ImportError:
-    print("[HotFix] 필수 라이브러리 누락 (mecab-ko-dic 등)", flush=True)
-except Exception as e:
-    print(f"[HotFix] 패치 적용 중 에러: {e}", flush=True)
+    pass
+except Exception:
+    pass
+
+import engine_core  # TTS Core Engine
+
 # ==================================================================
+# [STT Engine Imports]
+# ==================================================================
+import sherpa_onnx
+from faster_whisper import WhisperModel
+from vosk import Model, KaldiRecognizer
 
-import engine_core  # <--- 이 친구가 실행되기 전에 위 패치가 끝나야 합니다.
-
-print("[API] 스트리밍 서버 시작...", flush=True)
+# ==================================================================
+# [Global Config]
+# ==================================================================
+print("[System] 통합 AI 서버 시작... (TTS + STT)", flush=True)
 
 app = FastAPI()
 
-# 요청 저장소
+# TTS 요청 저장소
 request_store = {}
 
 class TTSRequest(BaseModel):
     text: str
     lang: str = "KR"
 
-# ==================================================================
-# ★★★ [핵심] 서버 시작 시 '실전 예열' 실행 ★★★
-# ==================================================================
-def preload_models():
-    print("[API] 🚀 모든 언어 모델 예열(Warm-up) 시작... (CPU가 바빠질 수 있습니다)", flush=True)
+# STT Global Variables
+stt_models = {
+    "sherpa_kr": None,
+    "sherpa_bilingual": None,
+    "vosk_ja": None,
+    "whisper": None
+}
 
-    # Tier 1: MeloTTS 예열
-    langs = ['KR', 'EN', 'JP', 'ZH']
-    for lang in langs:
-        # load_model 대신 warmup_model을 호출하여 계산까지 미리 시킴
+# Whisper Settings
+WHISPER_ENGINE = os.getenv('WHISPER_ENGINE', 'faster-whisper')
+PROMPTS = {
+    'ko': "안녕하세요. 행정복지센터 민원 키오스크입니다. 등본, 초본, 인감, 전입, 증명서",
+    'ja': "住民票、戸籍証明書、印鑑証明書、転入届、住所変更、証明書発行",
+    'zh': "户口本、证明书、身份证明、住址变更、户籍证明、印章证明",
+    'en': "resident registration, certificate, seal certificate, address change, family register"
+}
+MAX_AUDIO_BUFFER_SECONDS = 30
+MAX_AUDIO_SAMPLES = 16000 * MAX_AUDIO_BUFFER_SECONDS
+
+# ==================================================================
+# [Startup Event] - TTS & STT 모델 로드
+# ==================================================================
+def load_stt_models():
+    """STT 모델 로드 (비동기 아님, 스레드에서 실행)"""
+    print("[STT] 🚀 STT 모델 로딩 시작...", flush=True)
+
+    # ⭐ [배포 모드 감지] TTS와 동일한 방식
+    if getattr(sys, 'frozen', False):
+        # PyInstaller로 패키징된 경우
+        base_path = os.path.dirname(sys.executable)
+        models_dir = os.path.join(base_path, "models")
+        print(f"[STT] 배포 모드 감지: 모델 경로 -> {models_dir}")
+    else:
+        # 개발 모드: python-env 경로 확인
+        python_env_path = r"C:\Users\hana_us04\AppData\Local\MAXEE_promotional\python-env\models"
+        if os.path.exists(python_env_path):
+            models_dir = python_env_path
+            print(f"[STT] 배포 모드 감지: 모델 경로 -> {models_dir}")
+        else:
+            # 로컬 개발 (workers/models)
+            models_dir = "./models"
+
+    # [A] Sherpa Korean
+    try:
+        path = os.path.join(models_dir, "sherpa-onnx-streaming-zipformer-korean-2024-06-16")
+        stt_models["sherpa_kr"] = sherpa_onnx.OnlineRecognizer.from_transducer(
+            tokens=os.path.join(path, "tokens.txt"),
+            encoder=os.path.join(path, "encoder-epoch-99-avg-1.int8.onnx"),
+            decoder=os.path.join(path, "decoder-epoch-99-avg-1.int8.onnx"),
+            joiner=os.path.join(path, "joiner-epoch-99-avg-1.int8.onnx"),
+            num_threads=3, sample_rate=16000,
+            enable_endpoint_detection=True,
+            rule1_min_trailing_silence=2.0, rule2_min_trailing_silence=1.0, rule3_min_utterance_length=30.0,
+        )
+        print("   ✅ [Sherpa] 한국어 엔진 로드 완료")
+    except Exception as e:
+        print(f"   ❌ [Sherpa] 한국어 실패: {e}")
+
+    # [B] Sherpa Bilingual
+    try:
+        path = os.path.join(models_dir, "sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20")
+        stt_models["sherpa_bilingual"] = sherpa_onnx.OnlineRecognizer.from_transducer(
+            tokens=os.path.join(path, "tokens.txt"),
+            encoder=os.path.join(path, "encoder-epoch-99-avg-1.int8.onnx"),
+            decoder=os.path.join(path, "decoder-epoch-99-avg-1.int8.onnx"),
+            joiner=os.path.join(path, "joiner-epoch-99-avg-1.int8.onnx"),
+            num_threads=3, sample_rate=16000,
+            enable_endpoint_detection=True,
+            rule1_min_trailing_silence=2.0, rule2_min_trailing_silence=1.0, rule3_min_utterance_length=30.0,
+        )
+        print("   ✅ [Sherpa] 중영 엔진 로드 완료")
+    except Exception:
+        print("   ⚠️ [Sherpa] 중영 엔진 실패 (기능 비활성화)")
+
+    # [C] Vosk Japanese
+    try:
+        path = os.path.join(models_dir, "vosk-model-small-ja-0.22")
+        stt_models["vosk_ja"] = Model(path)
+        print("   ✅ [Vosk] 일본어 엔진 로드 완료")
+    except Exception:
+        print("   ⚠️ [Vosk] 일본어 엔진 실패 (기능 비활성화)")
+
+    # [D] Whisper (Faster-Whisper)
+    try:
+        stt_models["whisper"] = WhisperModel("small", device="cpu", compute_type="int8", num_workers=2)
+        print("   ✅ [Whisper] 다국어 엔진 로드 완료")
+    except Exception as e:
+        print(f"   ❌ [Whisper] 로드 실패: {e}")
+
+    print("[STT] ✅ 모든 STT 모델 준비 완료", flush=True)
+
+def preload_tts_models():
+    """TTS 모델 예열"""
+    print("[TTS] 🚀 TTS 모델 예열 시작...", flush=True)
+
+    # Tier 1: MeloTTS
+    for lang in ['KR', 'EN', 'JP', 'ZH']:
         engine_core.warmup_model(lang)
 
-
-    # Tier 2: Piper TTS 예열 (Vietnamese 등)
+    # Tier 2: Piper
     if engine_core.PIPER_AVAILABLE:
-        print("[API] 🔥 Piper TTS 엔진 예열 중...", flush=True)
         try:
-            # Piper 언어들 예열
-            piper_langs = ['vi', 'es', 'fr']  # 대표 언어만
-            for lang in piper_langs:
+            for lang in ['vi', 'es', 'fr']:
                 engine_core.piper_engine.warmup(lang)
-            print("[API] ✅ Piper TTS 예열 완료!", flush=True)
-        except Exception as e:
-            print(f"[API] ⚠️ Piper 예열 실패: {e}", flush=True)
+            print("   ✅ [Piper] 예열 완료")
+        except: pass
 
-    # Tier 3: Sherpa-ONNX 예열 (Filipino 등)
+    # Tier 3: Sherpa
     if engine_core.SHERPA_AVAILABLE:
-        print("[API] 🔥 Sherpa-ONNX 엔진 예열 중...", flush=True)
         try:
-            # Sherpa 언어 예열 (Filipino)
             engine_core.sherpa_engine.warmup('tl')
-            print("[API] ✅ Sherpa-ONNX 예열 완료!", flush=True)
-        except Exception as e:
-            print(f"[API] ⚠️ Sherpa 예열 실패: {e}", flush=True)
+            print("   ✅ [Sherpa-TTS] 예열 완료")
+        except: pass
 
-    print("[API] ✅ 모든 모델 예열 완료! 이제 첫 클릭도 0.5초 컷 가능합니다.", flush=True)
+    print("[TTS] ✅ TTS 예열 완료", flush=True)
 
-# 서버 시작 이벤트에 등록 (비동기 방해 안 되게 스레드로 실행)
 @app.on_event("startup")
 async def startup_event():
-    thread = threading.Thread(target=preload_models)
-    thread.start()
+    # 백그라운드 스레드에서 무거운 모델 로딩 수행
+    t1 = threading.Thread(target=load_stt_models)
+    t2 = threading.Thread(target=preload_tts_models)
+    t1.start()
+    t2.start()
 
 # ==================================================================
+# [Helper Functions] STT Audio Processing
+# ==================================================================
+def reduce_noise(audio, sample_rate=16000):
+    try:
+        from scipy import signal
+        sos = signal.butter(3, 80, 'hp', fs=sample_rate, output='sos')
+        return signal.sosfilt(sos, audio).astype(np.float32)
+    except:
+        return audio
 
+def normalize_audio(audio):
+    max_val = np.abs(audio).max()
+    if max_val > 0:
+        return audio / max_val * 0.95
+    return audio
+
+async def transcribe_async(audio, target_lang):
+    """Whisper 비동기 처리"""
+    def _run_whisper():
+        model = stt_models["whisper"]
+        if not model: return [], None
+        return model.transcribe(
+            audio,
+            language=target_lang,
+            beam_size=3,
+            best_of=1,
+            temperature=0.0,
+            compression_ratio_threshold=2.4,
+            log_prob_threshold=-1.0,
+            no_speech_threshold=0.6,
+            vad_filter=True,
+            vad_parameters=dict(threshold=0.45, min_speech_duration_ms=350, min_silence_duration_ms=600),
+            initial_prompt=PROMPTS.get(target_lang, None),
+            condition_on_previous_text=False,
+        )
+    return await asyncio.to_thread(_run_whisper)
+
+# ==================================================================
+# [API Endpoints] TTS
+# ==================================================================
 @app.post("/synthesize")
 def synthesize(req: TTSRequest):
-    # 중복 요청 방지 등
     req_id = str(uuid.uuid4())
     request_store[req_id] = req
-
-    # URL 발급
-    stream_url = f"http://127.0.0.1:8000/live/{req_id}"
-
-    return {
-        "ok": True,
-        "path": "STREAMING_MODE",
-        "url": stream_url
-    }
+    return {"ok": True, "path": "STREAMING_MODE", "url": f"http://127.0.0.1:8000/live/{req_id}"}
 
 @app.get("/live/{req_id}")
 def live_stream(req_id: str):
     req = request_store.get(req_id)
-    if not req:
-        return {"error": "Expired"}
-
-    # Use multi-tier synthesis (auto-routes to correct engine)
+    if not req: return {"error": "Expired"}
     generator = engine_core.synthesize_multi_tier(req.text, req.lang, speed=1.3)
-
-
-    if req_id in request_store:
-        del request_store[req_id]
-
+    if req_id in request_store: del request_store[req_id]
     return StreamingResponse(generator, media_type="audio/wav")
 
-@app.get("/tiers/status")
-def tier_status():
-    """Get status of all TTS tiers for debugging"""
-    import tts_router
+# ==================================================================
+# [API Endpoints] STT (WebSocket)
+# ==================================================================
+@app.websocket("/stt")
+async def stt_endpoint(websocket: WebSocket):
+    await websocket.accept()
 
-    # Tier 1 - MeloTTS (Always available)
-    tier1_status = {
-        "loaded_languages": list(engine_core._models.keys()),
-        "available": True,
-    }
+    # URL 파라미터 파싱
+    lang = websocket.query_params.get("lang", "ko")
+    print(f"🔵 [STT Client] 연결됨 (언어: {lang})")
 
-    # Tier 2 - Piper TTS
-    tier2_status = {
-        "available": engine_core.PIPER_AVAILABLE,
-        "loaded_voices": [],
-    }
+    # 언어별 Recognizer 선택
+    current_recognizer = None
+    vosk_recognizer = None
+
+    if lang == 'ko':
+        current_recognizer = stt_models["sherpa_kr"]
+    elif lang in ['en', 'zh']:
+        current_recognizer = stt_models.get("sherpa_bilingual")
+    elif lang == 'ja':
+        if stt_models["vosk_ja"]:
+            vosk_recognizer = KaldiRecognizer(stt_models["vosk_ja"], 16000)
+    else:
+        current_recognizer = stt_models["sherpa_kr"] # Fallback
+
+    # Sherpa Stream 생성
+    stream = current_recognizer.create_stream() if current_recognizer else None
+
+    audio_buffer = []
+    total_samples = 0
+    last_partial_text = ""
+
     try:
-        if engine_core.PIPER_AVAILABLE and hasattr(engine_core, 'piper_engine'):
-            tier2_status["loaded_voices"] = list(engine_core.piper_engine._loaded_voices.keys())
+        while True:
+            # WebSocket 데이터 수신 (bytes)
+            message = await websocket.receive()
+
+            if "bytes" in message:
+                raw_bytes = message["bytes"]
+                samples = np.frombuffer(raw_bytes, dtype=np.float32)
+
+                # 1. Sherpa 실시간 처리
+                if stream:
+                    stream.accept_waveform(16000, samples)
+
+                # 버퍼 관리
+                if total_samples + len(samples) > MAX_AUDIO_SAMPLES:
+                    while total_samples + len(samples) > MAX_AUDIO_SAMPLES and audio_buffer:
+                        removed = audio_buffer.pop(0)
+                        total_samples -= len(removed)
+                audio_buffer.append(samples)
+                total_samples += len(samples)
+
+                # 2. [Sherpa] 실시간 텍스트 생성
+                if current_recognizer and stream:
+                    decode_start = time.time()
+                    while current_recognizer.is_ready(stream):
+                        current_recognizer.decode_stream(stream)
+
+                    result = current_recognizer.get_result(stream)
+                    partial_text = result.text if hasattr(result, 'text') else str(result)
+
+                    if partial_text:
+                        decode_ms = (time.time() - decode_start) * 1000
+                        await websocket.send_json({
+                            "type": "partial", "text": partial_text,
+                            "lang": lang, "timestamp": time.time() * 1000,
+                            "decode_ms": round(decode_ms, 1)
+                        })
+
+                # 2-B. [Vosk] 일본어 실시간 처리
+                elif vosk_recognizer:
+                    decode_start = time.time()
+                    audio_int16 = (samples * 32767).astype(np.int16).tobytes()
+
+                    if vosk_recognizer.AcceptWaveform(audio_int16):
+                        res = json.loads(vosk_recognizer.Result())
+                        txt = res.get('text', '')
+                        if txt:
+                            await websocket.send_json({
+                                "type": "partial", "text": txt,
+                                "lang": lang, "timestamp": time.time() * 1000,
+                                "decode_ms": 0
+                            })
+                    else:
+                        res = json.loads(vosk_recognizer.PartialResult())
+                        txt = res.get('partial', '')
+                        if txt and txt != last_partial_text:
+                            last_partial_text = txt
+                            await websocket.send_json({
+                                "type": "partial", "text": txt,
+                                "lang": lang, "timestamp": time.time() * 1000,
+                                "decode_ms": 0
+                            })
+
+                # 3. [Sherpa VAD] 발화 종료 감지 -> Whisper 실행
+                if current_recognizer and current_recognizer.is_endpoint(stream):
+                    print(f"🛑 [VAD] 발화 종료 ({lang}) -> Whisper 실행")
+                    current_recognizer.reset(stream)
+                    last_partial_text = ""
+
+                    if not audio_buffer: continue
+                    full_audio = np.concatenate(audio_buffer)
+                    audio_buffer = []
+                    total_samples = 0
+
+                    # 최소 길이 & 볼륨 체크
+                    if len(full_audio) < 24000: continue # 1.5초 미만
+                    if np.sqrt(np.mean(np.square(full_audio))) < 0.005: continue # 너무 조용함
+
+                    # Whisper 실행
+                    filtered = normalize_audio(reduce_noise(full_audio))
+                    whisper_start = time.time()
+
+                    segments, info = await transcribe_async(filtered, lang)
+                    segments_list = list(segments)
+
+                    if not segments_list: continue
+
+                    # 품질 필터링
+                    quality_segs = [s for s in segments_list if getattr(s, 'no_speech_prob', 0) < 0.6]
+                    if not quality_segs: continue
+
+                    final_text = " ".join([s.text for s in quality_segs]).strip()
+                    if not final_text: continue
+
+                    avg_prob = sum(getattr(s, 'avg_logprob', -1.0) for s in quality_segs) / len(quality_segs)
+                    confidence = round((1 + avg_prob) * 100, 1)
+                    whisper_ms = (time.time() - whisper_start) * 1000
+
+                    print(f"🎯 [Whisper] 확정: {final_text} ({confidence}%)")
+
+                    await websocket.send_json({
+                        "type": "final", "text": final_text,
+                        "lang": lang, "confidence": confidence,
+                        "timestamp": time.time() * 1000,
+                        "whisper_ms": round(whisper_ms, 1)
+                    })
+
+            elif "text" in message:
+                if message["text"] == "RESET":
+                    if current_recognizer: current_recognizer.reset(stream)
+                    audio_buffer = []
+                    total_samples = 0
+
+    except WebSocketDisconnect:
+        print(f"🔴 [STT Client] 연결 종료 ({lang})")
     except Exception as e:
-        tier2_status["error"] = str(e)
-
-    # Tier 3 - Sherpa-ONNX (Safe error handling)
-    tier3_status = {
-        "available": engine_core.SHERPA_AVAILABLE,
-        "ready": False,
-    }
-    try:
-        if engine_core.SHERPA_AVAILABLE and hasattr(engine_core, 'sherpa_engine'):
-            tier3_status["ready"] = engine_core.sherpa_engine.is_ready()
-    except Exception as e:
-        tier3_status["available"] = False
-        tier3_status["error"] = f"Sherpa engine error: {str(e)}"
-
-    # Language routing
-    language_routing = {}
-    try:
-        for lang in ['ko', 'en', 'ja', 'zh', 'vi', 'th', 'ru', 'es', 'de', 'fr', 'pt', 'it']:
-            language_routing[lang] = tts_router.get_tier_info(lang)
-    except Exception as e:
-        language_routing["error"] = str(e)
-
-    status = {
-        "tier1_melotts": tier1_status,
-        "tier2_piper": tier2_status,
-        "tier3_sherpa": tier3_status,
-        "language_routing": language_routing
-    }
-
-    return status
-
+        print(f"⚠️ [STT Error] {e}")
 
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)

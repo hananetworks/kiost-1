@@ -115,24 +115,13 @@ app.whenReady().then(async () => {
             log.info("[Main] Python/AI 엔진 점검 시작...");
             let pyPath;
 
-            if (app.isPackaged) {
-                // [배포 모드] 설치된 파이썬 사용
-                pyPath = await ensurePythonEnvironment(win);
-            } else {
-                // [개발 모드] ★수정됨★
-                // 프로젝트 루트에 있는 가상환경(.venv)의 python.exe를 사용합니다.
-                // (main.js 위치에 따라 '../' 개수는 조절이 필요할 수 있습니다.)
+            // ▼▼▼ [수정됨] 개발/배포 상관없이 무조건 '배포판 Python' 사용 ▼▼▼
+            // 이렇게 하면 개발 중에도 mecab, 모델 경로, 라이브러리 등이 실제 키오스크와 100% 동일해집니다.
 
-                // 예: electron/main.js 에 있다면 -> ../../.venv
-                pyPath = path.join(__dirname, '..', '..', 'venv', 'Scripts', 'python.exe');
+            log.info("[Main] 개발 모드에서도 배포판 Python 환경(python-env)을 로드합니다.");
+            pyPath = await ensurePythonEnvironment(win);
 
-                // 만약 위 경로가 아니면, 현재 작업 디렉토리(cwd) 기준으로 찾기 시도
-                if (!require('fs').existsSync(pyPath)) {
-                    pyPath = path.join(process.cwd(), 'venv', 'Scripts', 'python.exe');
-                }
-
-                log.info(`[Main] 개발 모드: 로컬 가상환경 사용 -> ${pyPath}`);
-            }
+            // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
             // 파이썬 서버 시작
             initializePythonServices(win, pyPath);
