@@ -10,7 +10,7 @@ const os = require('os');
 const { execSync } = require('child_process');
 
 // [설정]
-const REQUIRED_ENV_VERSION = 'env-v1.3.17'; // 목표 버전
+const REQUIRED_ENV_VERSION = 'env-v1.4.0'; // 목표 버전
 const REPO_OWNER = 'hananetworks';
 const REPO_NAME = 'kiosk-python-runtime';
 const MAX_RETRIES = 3;
