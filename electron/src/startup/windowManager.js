@@ -8,7 +8,7 @@ function createWindow() {
 
     const win = new BrowserWindow({
         // [임시 수정] 배포/개발 상관없이 무조건 창 모드로 고정
-        kiosk: false,       // 키오스크 모드 해제 (전체화면 X)
+        kiosk: true,       // 키오스크 모드 해제 (전체화면 X)
         frame: true,        // 창틀(X버튼, 최소화) 표시 (이동 가능하게)
 
         // 화면 크기도 작게 고정 (1080x1920의 절반)
