@@ -121,25 +121,26 @@ MAX_AUDIO_SAMPLES = 16000 * MAX_AUDIO_BUFFER_SECONDS
 # [Startup Event] - TTS & STT 모델 로드
 # ==================================================================
 def load_stt_models():
-    """STT 모델 로드 (상대 경로 기반 자동 탐색)"""
     print("[STT] 🚀 STT 모델 로딩 시작...", flush=True)
-
-    # 1. 현재 파일(api_server.py)의 절대 경로 기준 설정
     current_file_path = os.path.dirname(os.path.abspath(__file__))
 
-    # 2. 모델 경로 후보군 설정
-    # 후보 1: api_server.py와 같은 폴더에 있는 models (배포/로컬 공통)
-    # 후보 2: 부모 폴더에 있는 models (일부 개발 환경)
-    candidate_1 = os.path.join(current_file_path, "models")
-    candidate_2 = os.path.join(current_file_path, "..", "models")
+    # 후보군 확장 (더 상위 폴더까지 탐색)
+    candidates = [
+        os.path.join(current_file_path, "models"),                # 같은 폴더
+        os.path.join(current_file_path, "..", "models"),           # 부모 폴더
+        os.path.join(current_file_path, "..", "..", "models"),      # 조부모 폴더 (배포 환경)
+        os.path.join(current_file_path, "..", "..", "..", "models") # 증조부모 폴더 (Electron 환경)
+    ]
 
-    if os.path.exists(candidate_1):
-        models_dir = candidate_1
-    elif os.path.exists(candidate_2):
-        models_dir = candidate_2
-    else:
-        # 최후의 수단: 현재 작업 디렉토리 기준
-        models_dir = "./models"
+    models_dir = None
+    for cand in candidates:
+        if os.path.exists(cand):
+            models_dir = cand
+            break
+
+    if not models_dir:
+        # 못 찾았을 때만 최후의 보루 (절대 경로로 변환해서 출력)
+        models_dir = os.path.abspath("./models")
 
     print(f"[STT] 모델 탐색 확정 경로: {os.path.abspath(models_dir)}")
 
