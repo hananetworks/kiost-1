@@ -121,24 +121,27 @@ MAX_AUDIO_SAMPLES = 16000 * MAX_AUDIO_BUFFER_SECONDS
 # [Startup Event] - TTS & STT 모델 로드
 # ==================================================================
 def load_stt_models():
-    """STT 모델 로드 (비동기 아님, 스레드에서 실행)"""
+    """STT 모델 로드 (상대 경로 기반 자동 탐색)"""
     print("[STT] 🚀 STT 모델 로딩 시작...", flush=True)
 
-    # ⭐ [배포 모드 감지] TTS와 동일한 방식
-    if getattr(sys, 'frozen', False):
-        # PyInstaller로 패키징된 경우
-        base_path = os.path.dirname(sys.executable)
-        models_dir = os.path.join(base_path, "models")
-        print(f"[STT] 배포 모드 감지: 모델 경로 -> {models_dir}")
+    # 1. 현재 파일(api_server.py)의 절대 경로 기준 설정
+    current_file_path = os.path.dirname(os.path.abspath(__file__))
+
+    # 2. 모델 경로 후보군 설정
+    # 후보 1: api_server.py와 같은 폴더에 있는 models (배포/로컬 공통)
+    # 후보 2: 부모 폴더에 있는 models (일부 개발 환경)
+    candidate_1 = os.path.join(current_file_path, "models")
+    candidate_2 = os.path.join(current_file_path, "..", "models")
+
+    if os.path.exists(candidate_1):
+        models_dir = candidate_1
+    elif os.path.exists(candidate_2):
+        models_dir = candidate_2
     else:
-        # 개발 모드: python-env 경로 확인
-        python_env_path = r"C:\Users\hana_us04\AppData\Local\MAXEE_promotional\python-env\models"
-        if os.path.exists(python_env_path):
-            models_dir = python_env_path
-            print(f"[STT] 배포 모드 감지: 모델 경로 -> {models_dir}")
-        else:
-            # 로컬 개발 (workers/models)
-            models_dir = "./models"
+        # 최후의 수단: 현재 작업 디렉토리 기준
+        models_dir = "./models"
+
+    print(f"[STT] 모델 탐색 확정 경로: {os.path.abspath(models_dir)}")
 
     # [A] Sherpa Korean
     try:
