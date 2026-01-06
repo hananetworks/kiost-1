@@ -1,4 +1,4 @@
-# api_server.py (통합 서버)
+# api_server.py (통합 서버 - 경로 및 파일명 자동 보정 버전)
 import sys
 import os
 import asyncio
@@ -8,6 +8,7 @@ import threading
 import time
 import urllib.parse
 import numpy as np
+import glob  # ★ 경로 검색을 위해 추가
 
 # ▼▼▼ [필수] 현재 경로 추가 ▼▼▼
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -24,7 +25,6 @@ import uvicorn
 # ==================================================================
 # [TTS Engine Imports]
 # ==================================================================
-# ★★★ [HotFix] 한국어 G2P 완벽 호환 패치 (Fake Eunjeon + Spec Fix) ★★★
 try:
     import types
     import MeCab
@@ -85,6 +85,30 @@ from faster_whisper import WhisperModel
 from vosk import Model, KaldiRecognizer
 
 # ==================================================================
+# [Helper Functions for Robust Path Finding]
+# ==================================================================
+def find_actual_model_path(base_dir, folder_keyword):
+    """
+    폴더 내부에 또 다른 폴더가 있거나(이중 구조),
+    실제 모델 파일(encoder... 등)이 있는 위치를 찾아 반환합니다.
+    """
+    search_root = os.path.join(base_dir, folder_keyword)
+    if not os.path.exists(search_root):
+        return search_root
+
+    # 모델 파일 중 하나인 'encoder'가 들어간 파일을 찾아 그 폴더를 반환
+    found_files = glob.glob(os.path.join(search_root, "**/encoder*"), recursive=True)
+    if found_files:
+        return os.path.dirname(found_files[0])
+    return search_root
+
+def get_tokens_path(model_path):
+    """사진에서 확인된 것처럼 'tokens.txt'와 확장자 없는 'tokens'를 모두 체크합니다."""
+    t1 = os.path.join(model_path, "tokens.txt")
+    t2 = os.path.join(model_path, "tokens")
+    return t1 if os.path.exists(t1) else t2
+
+# ==================================================================
 # [Global Config]
 # ==================================================================
 print("[System] 통합 AI 서버 시작... (TTS + STT)", flush=True)
@@ -124,12 +148,14 @@ def load_stt_models():
     print("[STT] 🚀 STT 모델 로딩 시작...", flush=True)
     current_file_path = os.path.dirname(os.path.abspath(__file__))
 
-    # 후보군 확장 (더 상위 폴더까지 탐색)
+    # [cite_start]후보군 확장: 실제 모델이 배포된 python-env 경로 우선 탐색
+    local_app_data = os.environ.get('LOCALAPPDATA', '')
     candidates = [
-        os.path.join(current_file_path, "models"),                # 같은 폴더
-        os.path.join(current_file_path, "..", "models"),           # 부모 폴더
-        os.path.join(current_file_path, "..", "..", "models"),      # 조부모 폴더 (배포 환경)
-        os.path.join(current_file_path, "..", "..", "..", "models") # 증조부모 폴더 (Electron 환경)
+        os.path.join(local_app_data, "MAXEE_promotional", "python-env", "models"), # 배포 순정 경로
+        os.path.join(current_file_path, "models"),                                # 파일 옆
+        os.path.join(current_file_path, "..", "models"),                         # 부모
+        os.path.join(current_file_path, "..", "..", "models"),                   # 조부모 (배포 환경)
+        os.path.join(current_file_path, "..", "..", "..", "models")              # 증조부모 (Electron)
     ]
 
     models_dir = None
@@ -139,16 +165,18 @@ def load_stt_models():
             break
 
     if not models_dir:
-        # 못 찾았을 때만 최후의 보루 (절대 경로로 변환해서 출력)
         models_dir = os.path.abspath("./models")
 
     print(f"[STT] 모델 탐색 확정 경로: {os.path.abspath(models_dir)}")
 
     # [A] Sherpa Korean
     try:
-        path = os.path.join(models_dir, "sherpa-onnx-streaming-zipformer-korean-2024-06-16")
+        # 이중 폴더 및 tokens 확장자 문제 자동 보정 적용
+        path = find_actual_model_path(models_dir, "sherpa-onnx-streaming-zipformer-korean-2024-06-16")
+        tk_path = get_tokens_path(path)
+
         stt_models["sherpa_kr"] = sherpa_onnx.OnlineRecognizer.from_transducer(
-            tokens=os.path.join(path, "tokens.txt"),
+            tokens=tk_path,
             encoder=os.path.join(path, "encoder-epoch-99-avg-1.int8.onnx"),
             decoder=os.path.join(path, "decoder-epoch-99-avg-1.int8.onnx"),
             joiner=os.path.join(path, "joiner-epoch-99-avg-1.int8.onnx"),
@@ -156,15 +184,15 @@ def load_stt_models():
             enable_endpoint_detection=True,
             rule1_min_trailing_silence=2.0, rule2_min_trailing_silence=1.0, rule3_min_utterance_length=30.0,
         )
-        print("   ✅ [Sherpa] 한국어 엔진 로드 완료")
+        print(f"   ✅ [Sherpa] 한국어 엔진 로드 완료 (Path: {path})")
     except Exception as e:
         print(f"   ❌ [Sherpa] 한국어 실패: {e}")
 
     # [B] Sherpa Bilingual
     try:
-        path = os.path.join(models_dir, "sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20")
+        path = find_actual_model_path(models_dir, "sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20")
         stt_models["sherpa_bilingual"] = sherpa_onnx.OnlineRecognizer.from_transducer(
-            tokens=os.path.join(path, "tokens.txt"),
+            tokens=get_tokens_path(path),
             encoder=os.path.join(path, "encoder-epoch-99-avg-1.int8.onnx"),
             decoder=os.path.join(path, "decoder-epoch-99-avg-1.int8.onnx"),
             joiner=os.path.join(path, "joiner-epoch-99-avg-1.int8.onnx"),
@@ -172,15 +200,15 @@ def load_stt_models():
             enable_endpoint_detection=True,
             rule1_min_trailing_silence=2.0, rule2_min_trailing_silence=1.0, rule3_min_utterance_length=30.0,
         )
-        print("   ✅ [Sherpa] 중영 엔진 로드 완료")
+        print(f"   ✅ [Sherpa] 중영 엔진 로드 완료 (Path: {path})")
     except Exception:
         print("   ⚠️ [Sherpa] 중영 엔진 실패 (기능 비활성화)")
 
     # [C] Vosk Japanese
     try:
-        path = os.path.join(models_dir, "vosk-model-small-ja-0.22")
+        path = find_actual_model_path(models_dir, "vosk-model-small-ja-0.22")
         stt_models["vosk_ja"] = Model(path)
-        print("   ✅ [Vosk] 일본어 엔진 로드 완료")
+        print(f"   ✅ [Vosk] 일본어 엔진 로드 완료 (Path: {path})")
     except Exception:
         print("   ⚠️ [Vosk] 일본어 엔진 실패 (기능 비활성화)")
 
@@ -196,31 +224,23 @@ def load_stt_models():
 def preload_tts_models():
     """TTS 모델 예열"""
     print("[TTS] 🚀 TTS 모델 예열 시작...", flush=True)
-
-    # Tier 1: MeloTTS
     for lang in ['KR', 'EN', 'JP', 'ZH']:
         engine_core.warmup_model(lang)
-
-    # Tier 2: Piper
     if engine_core.PIPER_AVAILABLE:
         try:
             for lang in ['vi', 'es', 'fr']:
                 engine_core.piper_engine.warmup(lang)
             print("   ✅ [Piper] 예열 완료")
         except: pass
-
-    # Tier 3: Sherpa
     if engine_core.SHERPA_AVAILABLE:
         try:
             engine_core.sherpa_engine.warmup('tl')
             print("   ✅ [Sherpa-TTS] 예열 완료")
         except: pass
-
     print("[TTS] ✅ TTS 예열 완료", flush=True)
 
 @app.on_event("startup")
 async def startup_event():
-    # 백그라운드 스레드에서 무거운 모델 로딩 수행
     t1 = threading.Thread(target=load_stt_models)
     t2 = threading.Thread(target=preload_tts_models)
     t1.start()
