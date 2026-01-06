@@ -9,6 +9,8 @@ import time
 import urllib.parse
 import numpy as np
 import glob  # ★ 경로 검색을 위해 추가
+import nltk
+
 
 # ▼▼▼ [필수] 현재 경로 추가 ▼▼▼
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -76,6 +78,28 @@ except Exception:
     pass
 
 import engine_core  # TTS Core Engine
+
+def setup_nltk():
+    # 현재 python-env 내부에 nltk_data 폴더 경로 설정
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    # python-env 폴더 내부에 nltk_data 저장소 지정
+    nltk_data_path = os.path.join(current_dir, "nltk_data")
+
+    if not os.path.exists(nltk_data_path):
+        os.makedirs(nltk_data_path)
+
+    nltk.data.path.append(nltk_data_path)
+
+    try:
+        # 리소스가 있는지 확인
+        nltk.data.find('taggers/averaged_perceptron_tagger_eng')
+    except LookupError:
+        print(f"[System] NLTK 리소스 다운로드 중... (경로: {nltk_data_path})")
+        # 지정된 경로에 리소스 다운로드
+        nltk.download('averaged_perceptron_tagger_eng', download_dir=nltk_data_path)
+
+# 서버 실행부 또는 startup_event 상단에서 호출
+setup_nltk()
 
 # ==================================================================
 # [STT Engine Imports]
