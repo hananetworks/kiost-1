@@ -10,7 +10,7 @@ import urllib.parse
 import numpy as np
 import glob  # ★ 경로 검색을 위해 추가
 import nltk
-
+import torch
 
 # ▼▼▼ [필수] 현재 경로 추가 ▼▼▼
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -76,6 +76,9 @@ except ImportError:
     pass
 except Exception:
     pass
+
+
+torch.set_num_threads(2)
 
 import engine_core  # TTS Core Engine
 
@@ -238,7 +241,7 @@ def load_stt_models():
 
     # [D] Whisper (Faster-Whisper)
     try:
-        stt_models["whisper"] = WhisperModel("small", device="cpu", compute_type="int8", num_workers=2)
+        stt_models["whisper"] = WhisperModel("small", device="cpu", compute_type="int8",cpu_threads=2, num_workers=2)
         print("   ✅ [Whisper] 다국어 엔진 로드 완료")
     except Exception as e:
         print(f"   ❌ [Whisper] 로드 실패: {e}")
