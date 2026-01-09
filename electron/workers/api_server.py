@@ -78,7 +78,7 @@ except Exception:
     pass
 
 
-torch.set_num_threads(2)
+torch.set_num_threads(4)
 
 import engine_core  # TTS Core Engine
 
@@ -253,17 +253,17 @@ def preload_tts_models():
     print("[TTS] 🚀 TTS 모델 예열 시작...", flush=True)
     for lang in ['KR', 'EN', 'JP', 'ZH']:
         engine_core.warmup_model(lang)
-    if engine_core.PIPER_AVAILABLE:
-        try:
-            for lang in ['vi', 'es', 'fr']:
-                engine_core.piper_engine.warmup(lang)
-            print("   ✅ [Piper] 예열 완료")
-        except: pass
-    if engine_core.SHERPA_AVAILABLE:
-        try:
-            engine_core.sherpa_engine.warmup('tl')
-            print("   ✅ [Sherpa-TTS] 예열 완료")
-        except: pass
+    # if engine_core.PIPER_AVAILABLE:
+    #     try:
+    #         for lang in ['vi', 'es', 'fr']:
+    #             engine_core.piper_engine.warmup(lang)
+    #         print("   ✅ [Piper] 예열 완료")
+    #     except: pass
+    # if engine_core.SHERPA_AVAILABLE:
+    #     try:
+    #         engine_core.sherpa_engine.warmup('tl')
+    #         print("   ✅ [Sherpa-TTS] 예열 완료")
+    #     except: pass
     print("[TTS] ✅ TTS 예열 완료", flush=True)
 
 @app.on_event("startup")
