@@ -12,6 +12,10 @@ import glob  # ★ 경로 검색을 위해 추가
 import nltk
 import torch
 
+os.environ["MKL_NUM_THREADS"] = "4"
+os.environ["OMP_NUM_THREADS"] = "4"
+# 파이토치 내부 최적화 활성화
+
 # ▼▼▼ [필수] 현재 경로 추가 ▼▼▼
 current_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(current_dir)
@@ -78,8 +82,10 @@ except Exception:
     pass
 
 
-torch.set_num_threads(4)
 
+
+torch.set_num_threads(4)
+torch.backends.cudnn.benchmark = False # CPU 환경이므로 False
 import engine_core  # TTS Core Engine
 
 def setup_nltk():
