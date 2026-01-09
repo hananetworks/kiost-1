@@ -197,6 +197,10 @@ function setupAuth() {
  */
 function runUpdateCheck(win) {
     return new Promise((resolve, reject) => {
+        // [추가] 현재 설치된 앱 버전 가져오기
+        const currentVersion = app.getVersion();
+        log.info(`[Updater] 현재 키오스크 버전: v${currentVersion}`); // 시작 시 버전 명시
+
         // 1. 타임아웃 설정 (15초)
         let timer = setTimeout(() => {
             cleanup();
@@ -212,31 +216,26 @@ function runUpdateCheck(win) {
             autoUpdater.removeAllListeners('download-progress');
         };
 
-        // 2. 업데이트 발견됨 -> 타임아웃 해제
+        // 2. 업데이트 발견됨
         autoUpdater.once('update-available', (info) => {
             if (timer) clearTimeout(timer);
             timer = null;
-            log.info(`[Updater] 🚀 새 버전 발견! (${info.version}). 다운로드 진행 중...`);
+            log.info(`[Updater] 🚀 새 버전 발견! (v${currentVersion} -> v${info.version}). 다운로드 시작...`);
             if (win) win.webContents.send('update-available', info);
         });
 
         // 3. 다운로드 진행률 전송
         autoUpdater.on('download-progress', (progressObj) => {
-            log.info(`[Updater] 다운로드: ${parseInt(progressObj.percent)}%`);
             if (win) win.webContents.send('download-progress', progressObj);
         });
 
         // 4. 다운로드 완료 -> 설치
         autoUpdater.once('update-downloaded', (info) => {
             cleanup();
-            log.info('[Updater] ✅ 다운로드 및 검증 완료. 재시작합니다.');
+            log.info(`[Updater] ✅ v${info.version} 다운로드 완료. 재시작 및 설치를 진행합니다.`);
             if (win) win.webContents.send('update-downloaded', info);
 
-            // UI에 완료 메시지를 보여줄 시간(3초)을 준 뒤 재시작
             setTimeout(() => {
-                // [수정] 첫 번째 인자를 'false'로 바꿔야 설치 화면(마법사)이 보입니다!
-                // true: 사용자 몰래 설치 (화면 안 나옴 -> 키오스크가 멈춘 것처럼 보임)
-                // false: 설치 화면 표시 (추천)
                 autoUpdater.quitAndInstall(false, true);
             }, 3000);
             resolve('UPDATE_FOUND');
@@ -245,7 +244,8 @@ function runUpdateCheck(win) {
         // 5. 업데이트 없음 -> 종료
         autoUpdater.once('update-not-available', (info) => {
             cleanup();
-            log.info('[Updater] 현재 최신 버전입니다.');
+            // [수정] 버전 번호를 포함하여 로그 출력
+            log.info(`[Updater] 현재 최신 버전(v${currentVersion})을 사용 중입니다.`);
             if (win) win.webContents.send('update-not-available');
             resolve('NO_UPDATE');
         });
